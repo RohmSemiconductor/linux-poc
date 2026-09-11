@@ -1,0 +1,5 @@
+config BR2_PACKAGE_SAMPLER_NET
+    bool "sampler net"
+    select BR2_PACKAGE_OPENSSH
+    help
+      Sampler network configuration package.
