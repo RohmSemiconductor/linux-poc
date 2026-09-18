@@ -281,8 +281,8 @@ static inline bool dma_sampler_buffer_is_ready(struct dma_sampler_state *st)
 	status = ioread64(st->sampler_regs + SAMPLER_STATUS_REG);
 
 	return status & (st->half ?
-			 SAMPLER_STATUS_HALF0_READY_BIT :
-			 SAMPLER_STATUS_HALF1_READY_BIT);
+			 SAMPLER_STATUS_HALF1_READY_BIT :
+			 SAMPLER_STATUS_HALF0_READY_BIT);
 }
 
 static int dma_sampler_iio_dma_buffer_submit(struct iio_dma_buffer_queue *queue,
@@ -291,6 +291,18 @@ static int dma_sampler_iio_dma_buffer_submit(struct iio_dma_buffer_queue *queue,
 	struct dma_sampler_state *st = dev_get_drvdata(queue->dev);
 	u32 src, dst;
 
+	dma_sampler_fpga_write(st, SAMPLER_CONTROL_REG, 0, false);
+	dma_sampler_fpga_write(st, SAMPLER_CAPTURE_COUNT_REG,
+			       SAMPLER_BUFFER_SAMPLE_COUNT * 2, false);
+
+	iowrite32(DMA_INTR_CLEAR_ALL, st->dma_regs + DMA_INTR_0_CLEAR_REG);
+	iowrite32(DMA_INTR_CLEAR_ALL, st->dma_regs + DMA_INTR_0_MASK_REG);
+	mmiowb();
+
+	dma_sampler_fpga_write(st, SAMPLER_CONTROL_REG,
+			       SAMPLER_CONTROL_CAPTURE_BIT |
+			       SAMPLER_CONTROL_CONTINUOUS_BIT, true);
+
 	/* Wait for buffer. */
 	while (!dma_sampler_buffer_is_ready(st))
 		;
@@ -298,10 +310,8 @@ static int dma_sampler_iio_dma_buffer_submit(struct iio_dma_buffer_queue *queue,
 	src = DMA_SOURCE_ADDRESS + st->half * SAMPLER_BUFFER_BYTE_COUNT;
 	dst = block->phys_addr + DMA_DESTINATION_OFFSET;
 
-	iowrite32(DMA_INTR_CLEAR_ALL, st->dma_regs + DMA_INTR_0_CLEAR_REG);
-	iowrite32(DMA_INTR_CLEAR_ALL, st->dma_regs + DMA_INTR_0_MASK_REG);
-
 	/* Setup and start transfer. */
+	iowrite32(DMA_INTR_CLEAR_ALL, st->dma_regs + DMA_INTR_0_CLEAR_REG);
 	iowrite32(src, st->dma_regs + DMA_DESC_0_SOURCE_ADDR_REG);
 	iowrite32(dst, st->dma_regs + DMA_DESC_0_DEST_ADDR_REG);
 	iowrite32(SAMPLER_BUFFER_BYTE_COUNT,
@@ -425,16 +435,8 @@ static int dma_sampler_probe(struct platform_device *pdev)
 		return dev_err_probe(dev, ret,
 				     "failed to attach buffer to device\n");
 
+	dma_sampler_fpga_write(st, SAMPLER_CONTROL_REG, 0, false);
 	dma_sampler_set_sampling_freq(st, DMA_SAMPLER_DEFAULT_SAMPLING_FREQ);
-
-	/* Set sample count. */
-	dma_sampler_fpga_write(st, SAMPLER_CAPTURE_COUNT_REG,
-			       SAMPLER_BUFFER_SAMPLE_COUNT, false);
-
-	/* Enable continuous capture. */
-	dma_sampler_fpga_write(st, SAMPLER_CONTROL_REG,
-			       SAMPLER_CONTROL_CAPTURE_BIT |
-			       SAMPLER_CONTROL_CONTINUOUS_BIT, true);
 
 	iowrite32(DMA_INTR_CLEAR_ALL, st->dma_regs + DMA_INTR_0_CLEAR_REG);
 	iowrite32(DMA_INTR_CLEAR_ALL, st->dma_regs + DMA_INTR_0_MASK_REG);
