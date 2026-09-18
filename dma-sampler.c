@@ -4,6 +4,7 @@
 #include <linux/container_of.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
+#include <linux/list.h>
 #include <linux/mod_devicetable.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
@@ -259,13 +260,16 @@ static irqreturn_t dma_sampler_irq_handler(int irq, void *p)
 
 	st->half = !st->half;
 
-	block = container_of(st->head.next,
-			     struct iio_dma_buffer_block, head);
+	scoped_guard(spinlock_irqsave, &st->queue.list_lock) {
+		block = list_first_entry_or_null(&st->head,
+						 struct iio_dma_buffer_block,
+						 head);
+		if (block)
+			list_del(&block->head);
+	}
 
-	scoped_guard(spinlock_irqsave, &block->queue->list_lock)
-		list_del(&block->head);
-
-	iio_dma_buffer_block_done(block);
+	if (block)
+		iio_dma_buffer_block_done(block);
 
 	return IRQ_HANDLED;
 }
