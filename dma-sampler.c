@@ -406,21 +406,6 @@ static int dma_sampler_probe(struct platform_device *pdev)
 		return dev_err_probe(dev, -EINVAL,
 				     "failed to map dma registers\n");
 
-	iowrite32(DMA_INTR_CLEAR_ALL, st->dma_regs + DMA_INTR_0_CLEAR_REG);
-	iowrite32(DMA_INTR_CLEAR_ALL, st->dma_regs + DMA_INTR_0_MASK_REG);
-	mmiowb();
-
-	st->irq = platform_get_irq(pdev, 0);
-	if (st->irq < 0)
-		return dev_err_probe(dev, st->irq, "failed to get irq\n");
-
-	ret = devm_request_irq(dev, st->irq, dma_sampler_irq_handler, 0,
-			       dev_name(dev), indio_dev);
-	if (ret < 0)
-		return dev_err_probe(dev, ret,
-				     "failed to request irq: irq %d\n",
-				     st->irq);
-
 	iio_dma_buffer_init(&st->queue, dev, &dma_sampler_iio_dma_buffer_ops);
 	INIT_LIST_HEAD(&st->head);
 
@@ -446,6 +431,21 @@ static int dma_sampler_probe(struct platform_device *pdev)
 	dma_sampler_fpga_write(st, SAMPLER_CONTROL_REG,
 			       SAMPLER_CONTROL_CAPTURE_BIT |
 			       SAMPLER_CONTROL_CONTINUOUS_BIT, true);
+
+	iowrite32(DMA_INTR_CLEAR_ALL, st->dma_regs + DMA_INTR_0_CLEAR_REG);
+	iowrite32(DMA_INTR_CLEAR_ALL, st->dma_regs + DMA_INTR_0_MASK_REG);
+	mmiowb();
+
+	st->irq = platform_get_irq(pdev, 0);
+	if (st->irq < 0)
+		return dev_err_probe(dev, st->irq, "failed to get irq\n");
+
+	ret = devm_request_irq(dev, st->irq, dma_sampler_irq_handler, 0,
+			       dev_name(dev), indio_dev);
+	if (ret < 0)
+		return dev_err_probe(dev, ret,
+				     "failed to request irq: irq %d\n",
+				     st->irq);
 
 	return devm_iio_device_register(dev, indio_dev);
 }
