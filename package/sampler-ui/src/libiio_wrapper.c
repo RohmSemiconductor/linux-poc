@@ -36,7 +36,7 @@ int set_channel(int index);
 // #define TRACE() printf("%s\n", __PRETTY_FUNCTION__)
 #define TRACE()
 
-int connect(const char *uri)
+int connect()
 {
     TRACE();
 
@@ -48,7 +48,7 @@ int connect(const char *uri)
     /*
      * create context
      */
-    lib.context = iio_create_context(NULL, uri);
+    lib.context = iio_create_context(NULL, "local:");
     if (iio_err(lib.context))
         return iio_err(lib.context);
 

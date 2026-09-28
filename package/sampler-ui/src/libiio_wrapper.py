@@ -1,15 +1,12 @@
 import ctypes
 from copy import deepcopy
 
-_iio = ctypes.cdll.LoadLibrary("./libiio_wrapper_but_python_shouldnt_import_this.so")
+_iio = ctypes.cdll.LoadLibrary("/usr/lib/libiio_wrapper_but_python_shouldnt_import_this.so")
 
 _connect = _iio.connect
 _connect.restype = ctypes.c_int
-_connect.argtypes = (
-    ctypes.c_char_p,
-)
-def connect(uri: str) -> int:
-    return _connect(uri.encode())
+def connect() -> int:
+    return _connect()
 
 _disconnect = _iio.disconnect
 def disconnect():
@@ -50,28 +47,54 @@ _set_channel.argtypes = (
 def set_channel(chan: int) -> int:
     return _set_channel(chan)
 
-_get = _iio.get
-_get.restype = ctypes.POINTER(ctypes.c_float)
-_get.argtypes = (
+_get_sampling_frequencies = _iio.get_sampling_frequencies
+_get_sampling_frequencies.restype = ctypes.POINTER(ctypes.c_char_p)
+_get_sampling_frequencies.argtypes = (
     ctypes.POINTER(ctypes.c_size_t),
 )
-def get() -> list[int]:
+def get_sampling_frequencies() -> list[str]:
+    count = ctypes.c_size_t()
+    res = _get_sampling_frequencies(ctypes.byref(count))
+    if not res:
+        return []
+    return [x.decode() for x in deepcopy(res[:int(count.value)])]
+
+_get_sampling_frequency = _iio.get_sampling_frequency
+_get_sampling_frequency.restype = ctypes.c_int
+def get_sampling_frequency() -> int:
+    return _get_sampling_frequency()
+
+_set_sampling_frequency = _iio.set_sampling_frequency
+_set_sampling_frequency.restype = ctypes.c_int
+_set_sampling_frequency.argtypes = (
+    ctypes.c_int,
+)
+def set_sampling_frequency(freq: int) -> int:
+    return _set_sampling_frequency(freq)
+
+
+_get_block = _iio.get_block
+_get_block.restype = ctypes.POINTER(ctypes.c_float)
+_get_block.argtypes = (
+    ctypes.POINTER(ctypes.c_size_t),
+)
+def get_block() -> list[int]:
     byte_count = ctypes.c_size_t()
-    block = _get(ctypes.byref(byte_count))
+    block = _get_block(ctypes.byref(byte_count))
     sample_count = int(byte_count.value)
     return block[:sample_count]
 
 
-def get_devices_once(uri: str) -> list[str]:
-    if connect(uri) < 0:
+def get_devices_once() -> list[str]:
+    if connect() < 0:
         raise ValueError
 
     devices = get_devices()
     disconnect()
     return devices
 
-def get_channels_once(uri: str, dev: str) -> list[str]:
-    if connect(uri) < 0:
+def get_channels_once(dev: str) -> list[str]:
+    if connect() < 0:
         raise ValueError
 
     devices = get_devices()
@@ -88,8 +111,8 @@ def get_channels_once(uri: str, dev: str) -> list[str]:
     disconnect()
     return channels
 
-def get_sampling_frequencies_once(uri: str, dev: str, chan: str) -> list[str]:
-    if connect(uri) < 0:
+def get_sampling_frequencies_once(dev: str, chan: str) -> list[str]:
+    if connect() < 0:
         raise ValueError
 
     devices = get_devices()

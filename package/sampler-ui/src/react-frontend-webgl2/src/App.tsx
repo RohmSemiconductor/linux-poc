@@ -59,7 +59,6 @@ function App() {
   // null = continuous, otherwise duration in ms
   const [durationMs, setDurationMs] = useState<number | null>(null);
 
-  const [uri, setUri] = useState("ip:192.168.255.27");
   const [device, setDevice] = useState("");
   const [devices, setDevices] = useState<string[]>([]);
   const [channel, setChannel] = useState("");
@@ -71,7 +70,6 @@ function App() {
     if (device) {
       sendCommand({
         command: "get_channels",
-        uri: uri,
         device: device,
       });
     }
@@ -81,7 +79,6 @@ function App() {
     if (channel) {
       sendCommand({
         command: "get_sampling_frequencies",
-        uri: uri,
         device: device,
         channel: channel,
       });
@@ -213,26 +210,11 @@ function App() {
 
               sendCommand({
                 command: "get_devices",
-                uri: uri,
               });
             }}
           >
             Refresh
           </Button>
-          <div className="flex gap-2 text-white">
-            <Label className="gap-1.5" title="Set URI for IIO context">
-              URI:
-              <Input
-                id="uri"
-                type="string"
-                className="w-64"
-                value={uri}
-                placeholder="E.g., ip:192.168.255.27"
-                onChange={(e) => setUri(e.target.value) }
-                disabled={streaming}
-                />
-            </Label>
-          </div>
           <div
             title="Select IIO device"
             className="flex items-center gap-1.5 text-xs"
@@ -401,7 +383,6 @@ function App() {
               sendCommand({
                 command: "start",
                 ...(durationMs !== null && { durationMs }),
-                uri: uri,
                 device: device,
                 channel: channel,
                 samplingFrequency: samplingFrequency,

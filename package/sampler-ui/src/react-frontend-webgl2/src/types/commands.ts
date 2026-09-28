@@ -2,15 +2,14 @@ export type Command =
   | {
       command: "start";
       durationMs?: number;
-      uri: string;
       device: string;
       channel: string;
       samplingFrequency: string;
     }
   | { command: "stop" }
-  | { command: "get_devices"; uri: string }
-  | { command: "get_channels"; uri: string; device: string }
-  | { command: "get_sampling_frequencies"; uri: string; device: string; channel: string; }
+  | { command: "get_devices"; }
+  | { command: "get_channels"; device: string }
+  | { command: "get_sampling_frequencies"; device: string; channel: string; }
 
 export type ServerMessage =
   | { type: "started" }

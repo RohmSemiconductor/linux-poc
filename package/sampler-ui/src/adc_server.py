@@ -17,7 +17,7 @@ log = logging.getLogger("adc_server")
 logging.getLogger("aiohttp").setLevel(logging.ERROR)
 
 MAX_SAMPS = 36860
-SERVER_PORT = int(os.environ.get("ADC_SERVER_PORT", "80"))
+SERVER_PORT = int(os.environ.get("ADC_SERVER_PORT", "8080"))
 
 async def ws_handler(request):
     ws = web.WebSocketResponse()
@@ -53,11 +53,11 @@ async def ws_handler(request):
             await asyncio.gather(watch_task, return_exceptions=True)
         log.info("rpi_adc_stream process stopped (pid %d, rc %d)", proc.pid, proc.returncode)
 
-    async def stream_from_libiio(uri: str, dev: str, chan: str, freq: str):
+    async def stream_from_libiio(dev: str, chan: str, freq: str):
         """Stream blocks from LibIIO using the C/Python wrapper"""
 
         try:
-            if iio.connect(uri) != 0:
+            if iio.connect() != 0:
                 return
 
             devices = iio.get_devices()
@@ -143,15 +143,14 @@ async def ws_handler(request):
                         duration_ms     = data.get("durationMs")    # None = stream indefinitely
                         t_stream_start  = time.perf_counter()
 
-                        if not "uri" in data or not "device" in data or not "channel" in data or not "samplingFrequency" in data:
+                        if not "device" in data or not "channel" in data or not "samplingFrequency" in data:
                             await ws.send_str(json.dumps({
                                 "type": "error",
-                                "message": "Missing URI, device, channel or sampling frequency"
+                                "message": "Missing device, channel or sampling frequency"
                             }))
                             continue
 
-                        task = asyncio.create_task(stream_from_libiio(data["uri"],
-                                                                      data["device"],
+                        task = asyncio.create_task(stream_from_libiio(data["device"],
                                                                       data["channel"],
                                                                       data["samplingFrequency"]))
                         log.info("Streaming started")
@@ -188,41 +187,34 @@ async def ws_handler(request):
                         log.info("Streaming stopped (manual, %.1f ms)", t_elapsed_ms)
 
                 case "get_devices":
-                    if "uri" in data:
-                        await ws.send_str(json.dumps({
-                            "type": "get_devices",
-                            "devices": iio.get_devices_once(data["uri"]),
-                        }))
-                    else:
-                        await ws.send_str(json.dumps({
-                            "type": "error",
-                            "message": "Missing URI"
-                        }))
+                    await ws.send_str(json.dumps({
+                        "type": "get_devices",
+                        "devices": iio.get_devices_once(),
+                    }))
 
                 case "get_channels":
-                    if "uri" in data and "device" in data:
+                    if "device" in data:
                         await ws.send_str(json.dumps({
                             "type": "get_channels",
-                            "channels": iio.get_channels_once(data["uri"], data["device"])
+                            "channels": iio.get_channels_once(data["device"]),
                         }))
                     else:
                         await ws.send_str(json.dumps({
                             "type": "error",
-                            "message": "Missing URI or device"
+                            "message": "Missing device",
                         }))
 
                 case "get_sampling_frequencies":
-                    if "uri" in data and "device" in data and "channel" in data:
+                    if "device" in data and "channel" in data:
                         await ws.send_str(json.dumps({
                             "type": "get_sampling_frequencies",
-                            "sampling_frequencies": iio.get_sampling_frequencies_once(data["uri"],
-                                                                                      data["device"],
+                            "sampling_frequencies": iio.get_sampling_frequencies_once(data["device"],
                                                                                       data["channel"]),
                         }))
                     else:
                         await ws .send_str(json.dumps({
                             "type": "error",
-                            "message": "Missing URI, device or channel",
+                            "message": "Missing device or channel",
                         }))
 
     except Exception as exc:
