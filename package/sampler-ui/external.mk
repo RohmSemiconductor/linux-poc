@@ -25,6 +25,7 @@ define SAMPLER_UI_INSTALL_TARGET_CMDS
 		$(TARGET_DIR)/usr/lib/libiio_wrapper_but_python_shouldnt_import_this.so
 
 	rsync -au $(@D)/react-frontend-webgl2/dist/* $(TARGET_DIR)/var/www/
+	$(INSTALL) -m 0755 -D $(@D)/S50adc_server $(TARGET_DIR)/etc/init.d/S50adc_server
 endef
 
 $(eval $(generic-package))
