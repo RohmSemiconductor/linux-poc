@@ -1,5 +1,5 @@
-from abc import get_cache_token
 import ctypes
+from copy import deepcopy
 
 _iio = ctypes.cdll.LoadLibrary("./libiio_wrapper_but_python_shouldnt_import_this.so")
 
@@ -29,8 +29,7 @@ _set_device.argtypes = (
     ctypes.c_int,
 )
 def set_device(dev: int) -> int:
-    ret = _set_device(dev)
-    return ret
+    return _set_device(dev)
 
 _get_next_channel = _iio.get_next_channel
 _get_next_channel.restype = ctypes.c_char_p
@@ -88,3 +87,31 @@ def get_channels_once(uri: str, dev: str) -> list[str]:
     channels = get_channels(index)
     disconnect()
     return channels
+
+def get_sampling_frequencies_once(uri: str, dev: str, chan: str) -> list[str]:
+    if connect(uri) < 0:
+        raise ValueError
+
+    devices = get_devices()
+    if not devices:
+        disconnect()
+        return []
+
+    index = devices.index(dev)
+    if set_device(index) < 0:
+        disconnect()
+        raise ValueError
+
+    channels = get_channels(index)
+    if not channels:
+        disconnect()
+        return []
+
+    index = channels.index(chan)
+    if set_channel(index) < 0:
+        disconnect()
+        raise ValueError
+
+    sampling_frequencies = get_sampling_frequencies()
+    disconnect()
+    return sampling_frequencies

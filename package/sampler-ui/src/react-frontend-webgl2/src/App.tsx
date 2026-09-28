@@ -31,7 +31,6 @@ import {
 import {
   INIT_CAP,
   MAX_SAMPS,
-  DEFAULT_SAMPLE_RATE,
   LIVE_WINDOW_SIZE,
   LIVE_WINDOW_MIN,
   LIVE_WINDOW_MAX,
@@ -57,20 +56,16 @@ function App() {
   const [live, setLive] = useState(false);
   const [fitAll, setFitAll] = useState(false);
   const [windowSize, setWindowSize] = useState(LIVE_WINDOW_SIZE);
-  const [sampleRate, setSampleRate] = useState(DEFAULT_SAMPLE_RATE);
-  const [actualSampleRate, setActualSampleRate] = useState<number | null>(null);
   // null = continuous, otherwise duration in ms
   const [durationMs, setDurationMs] = useState<number | null>(null);
-
-  // const [elapsedMs, setElapsedMs] = useState<number | null>(null);
-  // const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // const streamStartRef = useRef<number | null>(null);
 
   const [uri, setUri] = useState("ip:192.168.255.27");
   const [device, setDevice] = useState("");
   const [devices, setDevices] = useState<string[]>([]);
   const [channel, setChannel] = useState("");
   const [channels, setChannels] = useState<string[]>([]);
+  const [samplingFrequency, setSamplingFrequency] = useState("");
+  const [samplingFrequencies, setSamplingFrequencies] = useState<string[]>([]);
 
   useEffect(() => {
     if (device) {
@@ -82,19 +77,16 @@ function App() {
     }
   }, [device])
 
-  // function startTimer() {
-  //   streamStartRef.current = performance.now();
-  //   setElapsedMs(0);
-  //   timerRef.current = setInterval(() => {
-  //     setElapsedMs(performance.now() - streamStartRef.current!);
-  //   }, 100);
-  // }
-
-  // function stopTimer() {
-  //   if (timerRef.current !== null) clearInterval(timerRef.current);
-  //   if (streamStartRef.current !== null)
-  //     setElapsedMs(performance.now() - streamStartRef.current);
-  // }
+  useEffect(() => {
+    if (channel) {
+      sendCommand({
+        command: "get_sampling_frequencies",
+        uri: uri,
+        device: device,
+        channel: channel,
+      });
+    }
+  }, [channel])
 
   const handleData = useCallback((frame: ParsedFrame) => {
     const d = dataRef.current;
@@ -143,11 +135,6 @@ function App() {
     onData: handleData,
     onInfo: (msg) => {
       switch (msg.type) {
-        case "actual_sample_rate":
-          console.log("Actual sample-rate:", msg.value, "Hz");
-          setActualSampleRate(msg.value);
-          break;
-
         case "get_devices":
           setDevices(msg.devices);
           if (msg.devices.length) {
@@ -159,6 +146,12 @@ function App() {
           setChannels(msg.channels);
           if (msg.channels.length)
             setChannel(msg.channels[0]);
+          break;
+
+        case "get_sampling_frequencies":
+          setSamplingFrequencies(msg.sampling_frequencies);
+          if (msg.sampling_frequencies.length)
+            setSamplingFrequency(msg.sampling_frequencies[msg.sampling_frequencies.length - 1])
           break;
       }
     },
@@ -191,116 +184,119 @@ function App() {
 
   return (
     <div className="flex h-screen flex-col p-4">
-      <div className="flex h-5 items-center gap-2 mb-4 text-xs text-muted-foreground">
-        <span>ADC Plotter v{APP_VERSION}</span>{" "}
-        <Separator orientation="vertical" />
+      <div className="flex h-5 items-center gap-3 mb-4 text-xs text-muted-foreground">
+        <span>ADC Plotter v{APP_VERSION}</span>
+
+        <Separator orientation="vertical" className="h-6" />
         <StatusDot status={status} streaming={streaming} />
-        status:
-        <strong
-          className={
-            status === "connected" ? "text-emerald-400" : "text-orange-400"
-          }
-        >
-          {status}
-        </strong>
+        <span>
+          ADC Server: {" "}
+          <strong
+            className={
+              status === "connected" ? "text-emerald-400" : "text-orange-400"
+            }
+          >
+            {status}
+          </strong>
+        </span>
 
-        <div className="flex gap-2 text-white">
-          <Separator orientation="vertical" className="h-6" />
-          <Label className="gap-1.5" title="Set URI for IIO context">
-            URI:
-            <Input
-              id="uri"
-              type="string"
-              className="w-64"
-              value={uri}
-              placeholder="E.g., ip:192.168.255.27"
-              onChange={(e) => setUri(e.target.value) }
-              disabled={streaming}
-            />
-          </Label>
+        <Separator orientation="vertical" className="h-6" />
+        <div className="flex gap-3 text-white">
           <Button
-              variant="green"
-              title="Connect"
-              disabled={streaming}
-              onClick={() => {
-                setDevice("");
-                setChannel("");
+            variant="green"
+            title="Refresh IIO devices"
+            disabled={streaming}
+            onClick={() => {
+              setDevice("");
+              setChannel("");
+              setSamplingFrequency("");
 
-                sendCommand({
-                  command: "get_devices",
-                  uri: uri,
-                });
-              }}
-            >
-              Connect
-            </Button>
-
-          <Separator orientation="vertical" className="h-6" />
+              sendCommand({
+                command: "get_devices",
+                uri: uri,
+              });
+            }}
+          >
+            Refresh
+          </Button>
+          <div className="flex gap-2 text-white">
+            <Label className="gap-1.5" title="Set URI for IIO context">
+              URI:
+              <Input
+                id="uri"
+                type="string"
+                className="w-64"
+                value={uri}
+                placeholder="E.g., ip:192.168.255.27"
+                onChange={(e) => setUri(e.target.value) }
+                disabled={streaming}
+                />
+            </Label>
+          </div>
           <div
-              title="Select IIO device"
-              className="flex items-center gap-1.5 text-xs"
+            title="Select IIO device"
+            className="flex items-center gap-1.5 text-xs"
+          >
+            Device:
+            <Select
+              value={device}
+              onValueChange={(e) => setDevice(e)}
             >
-              Device:
-              <Select
-                value={device}
-                onValueChange={(e) => setDevice(e) }
-              >
-                <SelectTrigger className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent position="popper" >
-                  {devices.map((e) => (
-                    <SelectItem key={e} value={e}>
-                      {e}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-          <Separator orientation="vertical" className="h-6" />
+              <SelectTrigger className="w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" >
+                {devices.map((e) => (
+                  <SelectItem key={e} value={e}>
+                    {e}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div
-              title="Select IIO channel"
-              className="flex items-center gap-1.5 text-xs"
+            title="Select IIO channel"
+            className="flex items-center gap-1.5 text-xs"
+          >
+            Channel:
+            <Select
+              value={channel}
+              onValueChange={(e) => setChannel(e)}
             >
-              Channel:
-              <Select
-                value={channel}
-                onValueChange={(e) => setChannel(e) }
-              >
-                <SelectTrigger className="w-48" >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent position="popper" >
-                  {channels.map((e) => (
-                    <SelectItem key={e} value={e}>
-                      {e}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+              <SelectTrigger className="w-48" >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" >
+                {channels.map((e) => (
+                  <SelectItem key={e} value={e}>
+                    {e}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div
+            title="Select sampling frequency"
+            className="flex items-center gap-1.5 text-xs"
+          >
+            Sampling frequency:
+            <Select
+              value={samplingFrequency}
+              onValueChange={(e) => setSamplingFrequency(e)}
+            >
+              <SelectTrigger className="w-48" >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" >
+                {samplingFrequencies.map((e) => (
+                  <SelectItem key={e} value={e}>
+                    {e}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-
-        {/* <Separator orientation="vertical" />
-        elapsed:
-        <strong>
-          {elapsedMs === null ? "—" : (elapsedMs / 1000).toFixed(2) + " s"}
-        </strong> */}
-        {/* <Button
-          onClick={() => {
-            dataRef.current = generateSineData(5_000_000);
-          }}
-        >
-          Sine 5M
-        </Button>
-        <Button
-          onClick={() => {
-            dataRef.current = generateSineData(10_000_000);
-          }}
-        >
-          Sine 10M
-        </Button> */}
         <div className="ml-auto flex gap-2">
           <input
             ref={importInputRef}
@@ -363,9 +359,8 @@ function App() {
         id={"plotter"}
         dataRef={dataRef}
         style={{ flex: 1, minHeight: 0 }}
-        sampleRate={sampleRate}
-        actualSampleRate={actualSampleRate}
-        adcMax={3300*0.75}
+        sampleRate={Number(samplingFrequency)}
+        adcMax={5000}
         live={live}
         fitAll={fitAll}
         windowSize={windowSize}
@@ -405,13 +400,12 @@ function App() {
             onClick={() => {
               sendCommand({
                 command: "start",
-                sampleRate,
                 ...(durationMs !== null && { durationMs }),
                 uri: uri,
                 device: device,
                 channel: channel,
+                samplingFrequency: samplingFrequency,
               });
-              // startTimer();
             }}
           >
             <PlayIcon data-icon="inline-start" />
@@ -421,7 +415,6 @@ function App() {
             disabled={!streaming}
             onClick={() => {
               sendCommand({ command: "stop" });
-              // stopTimer();
             }}
           >
             <StopIcon data-icon="inline-start" />
@@ -480,27 +473,6 @@ function App() {
             className="w-24"
           />
           <span className="text-xs text-muted-foreground">samples</span>
-        </div>
-
-        <div className="ml-auto flex items-center gap-2">
-          <Label className="gap-1.5" title="Sample rate">
-            Sample rate (S/s):
-            <Input
-              id="samplerate"
-              type="number"
-              min={1000}
-              step={1000}
-              value={sampleRate}
-              onChange={(e) => setSampleRate(Number(e.target.value) || 1000)}
-              onBlur={(e) => {
-                const rounded =
-                  Math.round(Number(e.target.value) / 1000) * 1000;
-                setSampleRate(Math.max(1000, rounded));
-              }}
-              className="w-24"
-              disabled={streaming}
-            />
-          </Label>
         </div>
       </div>
       <Toaster />

@@ -6,7 +6,7 @@
 #include <iio/iio.h>
 
 #define BLOCKS_PER_STREAM   8
-#define SAMPLES_PER_BLOCK   36864
+#define SAMPLES_PER_BLOCK   36860
 
 struct lib {
     struct iio_context *context;
@@ -25,14 +25,16 @@ struct lib {
     int bytes_per_sample;
     float *samples;
     float scale;
+
+    char **sampling_frequencies;
 };
 static struct lib lib = { .running = false };
 
 int set_device(int index);
 int set_channel(int index);
 
-#define TRACE() printf("%s\n", __PRETTY_FUNCTION__)
-// #define TRACE()
+// #define TRACE() printf("%s\n", __PRETTY_FUNCTION__)
+#define TRACE()
 
 int connect(const char *uri)
 {
@@ -43,14 +45,12 @@ int connect(const char *uri)
 
     memset(&lib, 0, sizeof(lib));
 
-    printf("connect: uri %s\n", uri);
-
     /*
      * create context
      */
     lib.context = iio_create_context(NULL, uri);
     if (iio_err(lib.context))
-        return -iio_err(lib.context);
+        return iio_err(lib.context);
 
     lib.running = true;
 
@@ -71,8 +71,12 @@ void disconnect(void)
     if (lib.mask)
         iio_channels_mask_destroy(lib.mask);
 
+    free(lib.sampling_frequencies);
+
     iio_context_destroy(lib.context);
+
     lib.running = false;
+    lib.channel = NULL;
 }
 
 const char *get_next_device(void)
@@ -100,7 +104,7 @@ int set_device(int index)
     int ret;
 
     if (!lib.running)
-        return EINVAL;
+        return -EINVAL;
 
     if (lib.device) {
         /* unset channel */
@@ -119,7 +123,7 @@ int set_device(int index)
      */
     lib.device = iio_context_get_device(lib.context, index);
     if (!lib.device) {
-        ret = ENODEV;
+        ret = -ENODEV;
         goto err;
     }
 
@@ -128,7 +132,7 @@ int set_device(int index)
      */
     lib.buffer = iio_device_get_buffer(lib.device, 0);
     if (!lib.buffer) {
-        ret = EINVAL;
+        ret = -EINVAL;
         goto err;
     }
 
@@ -138,7 +142,7 @@ int set_device(int index)
     lib.mask = iio_create_channels_mask(iio_device_get_channels_count(
                                         lib.device));
     if (!lib.mask) {
-        ret = ENOMEM;
+        ret = -ENOMEM;
         goto err;
     }
 
@@ -176,7 +180,7 @@ int set_channel(int index)
     TRACE();
 
     if (!lib.running || !lib.device)
-        return EINVAL;
+        return -EINVAL;
 
     if (lib.channel) {
         if (lib.stream)
@@ -184,6 +188,9 @@ int set_channel(int index)
 
         iio_channel_disable(lib.channel, lib.mask);
         free(lib.samples);
+
+        free(lib.sampling_frequencies);
+        lib.sampling_frequencies = NULL;
     }
 
     /* for only unsetting the channel */
@@ -195,7 +202,7 @@ int set_channel(int index)
      */
     lib.channel = iio_device_get_channel(lib.device, index);
     if (!lib.channel)
-        return ENODEV;
+        return -ENODEV;
 
     /*
     * enable channel
@@ -210,7 +217,7 @@ int set_channel(int index)
     lib.stream = iio_buffer_create_stream(lib.buffer, BLOCKS_PER_STREAM,
                                           SAMPLES_PER_BLOCK, lib.mask);
     if (iio_err(lib.stream))
-        return -iio_err(lib.stream);
+        return iio_err(lib.stream);
 
     /*
      * allocate samples buffer; if the channels are all the same, this could
@@ -218,7 +225,7 @@ int set_channel(int index)
      */
     lib.samples = malloc(SAMPLES_PER_BLOCK * sizeof(lib.samples));
     if (!lib.samples)
-        return ENOMEM;
+        return -ENOMEM;
 
     lib.bytes_per_sample = format->length / 8;
     lib.scale = format->scale;
@@ -226,31 +233,107 @@ int set_channel(int index)
     return 0;
 }
 
-float *get(size_t *count)
+char **get_sampling_frequencies(size_t *count)
+{
+    TRACE();
+    const struct iio_attr *attr;
+    char **list;
+    int ret;
+
+    if (!lib.channel)
+        return NULL;
+
+    free(lib.sampling_frequencies);
+    lib.sampling_frequencies = NULL;
+
+    attr = iio_channel_find_attr(lib.channel, "sampling_frequency_available");
+    if (!attr)
+        return NULL;
+
+    ret = iio_attr_get_available(attr, &list, count);
+    if (ret < 0)
+        return NULL;
+
+    return list;
+}
+
+int get_sampling_frequency(void)
+{
+    TRACE();
+    const struct iio_attr *attr;
+    long long val;
+    int ret;
+
+    if (!lib.channel)
+        return -ENODEV;
+
+    attr = iio_channel_find_attr(lib.channel, "sampling_frequency");
+    if (!attr)
+        return -EINVAL;
+
+    /*
+     * The driver uses int for the sampling frequency, but libiio doesn't have
+     * an iio_attr_read_int() function, so this shall do.
+     */
+    ret = iio_attr_read_longlong(attr, &val);
+    if (ret < 0)
+        return ret;
+
+    return (int)val;
+}
+
+int set_sampling_frequency(int freq)
+{
+    TRACE();
+    const struct iio_attr *attr;
+    long long val;
+    int ret;
+
+    if (!lib.channel)
+        return -ENODEV;
+
+    attr = iio_channel_find_attr(lib.channel, "sampling_frequency");
+    if (!attr)
+        return -EINVAL;
+
+    val = freq;
+
+    ret = iio_attr_write_longlong(attr, val);
+    if (ret < 0)
+        return ret;
+
+    return 0;
+}
+
+float *get_block(size_t *count)
 {
     TRACE();
     const struct iio_block *block;
     float *sample;
-    void *first;
+    char dst[8];
+    char *src;
 
-    if (!lib.running)
+    if (!lib.channel)
         return NULL;
 
     block = iio_stream_get_next_block(lib.stream);
-    first = iio_block_first(block, lib.channel);
-    *count = (iio_block_end(block) - first) / lib.bytes_per_sample;
+    src = iio_block_first(block, lib.channel);
+    *count = ((char *)iio_block_end(block) - src) / lib.bytes_per_sample;
 
     for (size_t i = 0; i < *count; i++) {
         sample = &lib.samples[i];
 
+        iio_channel_convert(lib.channel, dst, src);
+
         switch (lib.bytes_per_sample) {
         case 2:
-            *sample = *(unsigned short *)(first + i * 2);
+            *sample = *(unsigned short *)dst;
             break;
 
-        /* TODO: add other sample widths */
+            /* TODO: add other sample widths */
         }
 
+        src += lib.bytes_per_sample;
         *sample *= lib.scale;
     }
 
