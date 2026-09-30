@@ -66,25 +66,6 @@ function App() {
   const [samplingFrequency, setSamplingFrequency] = useState("");
   const [samplingFrequencies, setSamplingFrequencies] = useState<string[]>([]);
 
-  useEffect(() => {
-    if (device) {
-      sendCommand({
-        command: "get_channels",
-        device: device,
-      });
-    }
-  }, [device])
-
-  useEffect(() => {
-    if (channel) {
-      sendCommand({
-        command: "get_sampling_frequencies",
-        device: device,
-        channel: channel,
-      });
-    }
-  }, [channel])
-
   const handleData = useCallback((frame: ParsedFrame) => {
     const d = dataRef.current;
 
@@ -154,6 +135,42 @@ function App() {
     },
   });
 
+  useEffect(() => {
+    if (status == "connected") {
+      sendCommand({
+        command: "get_devices",
+      });
+    } else {
+      setDevices([]);
+      setDevice("");
+
+      setChannels([]);
+      setChannel("");
+
+      setSamplingFrequencies([]);
+      setSamplingFrequency("");
+    }
+  }, [status]);
+
+  useEffect(() => {
+    if (device) {
+      sendCommand({
+        command: "get_channels",
+        device: device,
+      });
+    }
+  }, [device]);
+
+  useEffect(() => {
+    if (channel) {
+      sendCommand({
+        command: "get_sampling_frequencies",
+        device: device,
+        channel: channel,
+      });
+    }
+  }, [channel]);
+
   const handleWheel = useCallback(
     (e: WheelEvent<HTMLDivElement>) => {
       if (!live) return;
@@ -199,22 +216,6 @@ function App() {
 
         <Separator orientation="vertical" className="h-6" />
         <div className="flex gap-3 text-white">
-          <Button
-            variant="green"
-            title="Refresh IIO devices"
-            disabled={streaming}
-            onClick={() => {
-              setDevice("");
-              setChannel("");
-              setSamplingFrequency("");
-
-              sendCommand({
-                command: "get_devices",
-              });
-            }}
-          >
-            Refresh
-          </Button>
           <div
             title="Select IIO device"
             className="flex items-center gap-1.5 text-xs"
@@ -278,6 +279,22 @@ function App() {
               </SelectContent>
             </Select>
           </div>
+          <Button
+            variant="green"
+            title="Refresh IIO devices"
+            disabled={streaming}
+            onClick={() => {
+              setDevice("");
+              setChannel("");
+              setSamplingFrequency("");
+
+              sendCommand({
+                command: "get_devices",
+              });
+            }}
+          >
+            Refresh
+          </Button>
         </div>
         <div className="ml-auto flex gap-2">
           <input
