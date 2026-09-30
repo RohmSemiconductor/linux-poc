@@ -22,6 +22,7 @@ SERVER_PORT = int(os.environ.get("ADC_SERVER_PORT", "8080"))
 async def ws_handler(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
+    log.info("Client connected")
 
     streaming      = False
     task           = None
