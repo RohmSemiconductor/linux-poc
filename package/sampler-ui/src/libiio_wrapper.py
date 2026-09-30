@@ -86,16 +86,18 @@ def get_block() -> list[int]:
 
 
 def get_devices_once() -> list[str]:
-    if connect() < 0:
-        raise ValueError
+    ret = connect()
+    if ret < 0:
+        raise RuntimeError(ret)
 
     devices = get_devices()
     disconnect()
     return devices
 
 def get_channels_once(dev: str) -> list[str]:
-    if connect() < 0:
-        raise ValueError
+    ret = connect()
+    if ret < 0:
+        raise RuntimeError(ret)
 
     devices = get_devices()
     if not devices:
@@ -103,17 +105,19 @@ def get_channels_once(dev: str) -> list[str]:
         return []
 
     index = devices.index(dev)
-    if set_device(index) < 0:
+    ret = set_device(index)
+    if ret < 0:
         disconnect()
-        raise ValueError
+        raise RuntimeError(ret)
 
     channels = get_channels(index)
     disconnect()
     return channels
 
 def get_sampling_frequencies_once(dev: str, chan: str) -> list[str]:
-    if connect() < 0:
-        raise ValueError
+    ret = connect()
+    if ret < 0:
+        raise RuntimeError(ret)
 
     devices = get_devices()
     if not devices:
@@ -121,9 +125,10 @@ def get_sampling_frequencies_once(dev: str, chan: str) -> list[str]:
         return []
 
     index = devices.index(dev)
-    if set_device(index) < 0:
+    ret = set_device(index)
+    if ret < 0:
         disconnect()
-        raise ValueError
+        raise RuntimeError(ret)
 
     channels = get_channels(index)
     if not channels:
@@ -131,9 +136,10 @@ def get_sampling_frequencies_once(dev: str, chan: str) -> list[str]:
         return []
 
     index = channels.index(chan)
-    if set_channel(index) < 0:
+    ret = set_channel(index)
+    if ret < 0:
         disconnect()
-        raise ValueError
+        raise RuntimeError(ret)
 
     sampling_frequencies = get_sampling_frequencies()
     disconnect()

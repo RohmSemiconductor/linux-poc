@@ -217,8 +217,9 @@ async def ws_handler(request):
                             "message": "Missing device or channel",
                         }))
 
-    except Exception as exc:
-        log.error("WS error: %s", exc)
+    except Exception:
+        import traceback
+        traceback.print_exc()
     finally:
         if duration_task and not duration_task.done():
             duration_task.cancel()
