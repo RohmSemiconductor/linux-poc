@@ -522,6 +522,13 @@ config DLN2_ADC
 	  This driver can also be built as a module. If so, the module will be
 	  called adc_dln2.
 
+config DMA_SAMPLER
+	tristate "DMA sampler"
+	select IIO_BUFFER
+	select IIO_BUFFER_DMA
+	help
+	  Say yes here to build support for DMA sampler.
+
 config ENVELOPE_DETECTOR
 	tristate "Envelope detector using a DAC and a comparator"
 	help
