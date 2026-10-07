@@ -91,6 +91,7 @@
 #define DMA_START_BIT_0			BIT(0)
 
 struct dma_sampler_state {
+	bool running;
 	int half, irq, sampling_freq;
 
 	struct iio_dma_buffer_queue queue;
@@ -291,17 +292,28 @@ static int dma_sampler_iio_dma_buffer_submit(struct iio_dma_buffer_queue *queue,
 	struct dma_sampler_state *st = dev_get_drvdata(queue->dev);
 	u32 src, dst;
 
-	dma_sampler_fpga_write(st, SAMPLER_CONTROL_REG, 0, false);
-	dma_sampler_fpga_write(st, SAMPLER_CAPTURE_COUNT_REG,
-			       SAMPLER_BUFFER_SAMPLE_COUNT * 2, false);
+	if (!st->running) {
+		dma_sampler_fpga_write(st, SAMPLER_CONTROL_REG, 0, false);
+		dma_sampler_fpga_write(st, SAMPLER_CAPTURE_COUNT_REG,
+				       SAMPLER_BUFFER_SAMPLE_COUNT * 2, false);
 
-	iowrite32(DMA_INTR_CLEAR_ALL, st->dma_regs + DMA_INTR_0_CLEAR_REG);
-	iowrite32(DMA_INTR_CLEAR_ALL, st->dma_regs + DMA_INTR_0_MASK_REG);
-	mmiowb();
+		iowrite32(DMA_INTR_CLEAR_ALL,
+			  st->dma_regs + DMA_INTR_0_CLEAR_REG);
+		iowrite32(DMA_INTR_CLEAR_ALL,
+			  st->dma_regs + DMA_INTR_0_MASK_REG);
+		mmiowb();
 
-	dma_sampler_fpga_write(st, SAMPLER_CONTROL_REG,
-			       SAMPLER_CONTROL_CAPTURE_BIT |
-			       SAMPLER_CONTROL_CONTINUOUS_BIT, true);
+		dma_sampler_fpga_write(st, SAMPLER_CONTROL_REG,
+				       SAMPLER_CONTROL_CAPTURE_BIT |
+				       SAMPLER_CONTROL_CONTINUOUS_BIT, true);
+
+		dma_sampler_fpga_write(st, SAMPLER_ACK_REG,
+				       SAMPLER_ACK_HALF0_BIT, true);
+		dma_sampler_fpga_write(st, SAMPLER_ACK_REG,
+				       SAMPLER_ACK_HALF1_BIT, true);
+
+		st->running = true;
+	}
 
 	/* Wait for buffer. */
 	while (!dma_sampler_buffer_is_ready(st))
@@ -332,6 +344,12 @@ static void dma_sampler_iio_dma_buffer_abort(struct iio_dma_buffer_queue *queue)
 	struct dma_sampler_state *st = dev_get_drvdata(queue->dev);
 
 	iio_dma_buffer_block_list_abort(queue, &st->head);
+
+	if (st->running) {
+		dma_sampler_fpga_write(st, SAMPLER_CONTROL_REG, 0, true);
+
+		st->running = false;
+	}
 }
 
 static const struct iio_dma_buffer_ops dma_sampler_iio_dma_buffer_ops = {
