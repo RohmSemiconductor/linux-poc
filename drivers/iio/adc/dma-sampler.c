@@ -13,7 +13,7 @@
 #include <linux/iio/buffer-dma.h>
 #include <linux/iio/iio.h>
 
-#define SAMPLER_MAX_SAMPLE_COUNT	36860
+#define SAMPLER_MAX_SAMPLE_COUNT	36864
 #define SAMPLER_SAMPLES_PER_WORD	4
 #define SAMPLER_BYTES_PER_WORD		8
 
