@@ -16,7 +16,7 @@ logging.basicConfig(
 log = logging.getLogger("adc_server")
 logging.getLogger("aiohttp").setLevel(logging.ERROR)
 
-MAX_SAMPS = 36860
+MAX_SAMPS = 36864
 SERVER_PORT = int(os.environ.get("ADC_SERVER_PORT", "8080"))
 
 async def ws_handler(request):

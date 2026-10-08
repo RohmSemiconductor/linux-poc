@@ -6,7 +6,7 @@
 #include <iio/iio.h>
 
 #define BLOCKS_PER_STREAM   8
-#define SAMPLES_PER_BLOCK   36860
+#define SAMPLES_PER_BLOCK   36864
 
 struct lib {
     struct iio_context *context;

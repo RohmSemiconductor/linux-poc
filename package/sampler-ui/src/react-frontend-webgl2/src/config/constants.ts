@@ -5,7 +5,7 @@ export const WS_URL = `ws://${window.location.hostname}:8080/ws`;
 export const NOT_IMPLEMENTED = true;
 
 // mvaring chunk layout (must match struct adc_data in C code)
-export const MAX_SAMPS = 36860;
+export const MAX_SAMPS = 36864;
 export const CHUNK_BYTES = 4 + MAX_SAMPS * 4 + MAX_SAMPS * 4;
 
 // CPU / GPU buffer pre-allocation
