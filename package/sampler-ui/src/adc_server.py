@@ -11,7 +11,6 @@ from aiohttp import web
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s %(levelname)-8s %(message)s",
-    datefmt="%H:%M:%S",
 )
 log = logging.getLogger("adc_server")
 logging.getLogger("aiohttp").setLevel(logging.ERROR)
