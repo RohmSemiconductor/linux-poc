@@ -250,16 +250,9 @@ static irqreturn_t dma_sampler_irq_handler(int irq, void *p)
 	struct iio_dev *indio_dev = p;
 	struct dma_sampler_state *st = iio_priv(indio_dev);
 	struct iio_dma_buffer_block *block;
-	unsigned int ack;
 
 	iowrite32(DMA_INTR_CLEAR_ALL, st->dma_regs + DMA_INTR_0_CLEAR_REG);
 	iowrite32(DMA_INTR_CLEAR_ALL, st->dma_regs + DMA_INTR_0_MASK_REG);
-
-	/* Release buffer half. */
-	ack = st->half ? SAMPLER_ACK_HALF1_BIT : SAMPLER_ACK_HALF0_BIT;
-	dma_sampler_fpga_write(st, SAMPLER_ACK_REG, ack, true);
-
-	st->half = !st->half;
 
 	scoped_guard(spinlock_irqsave, &st->queue.list_lock) {
 		block = list_first_entry_or_null(&st->head,
@@ -290,6 +283,7 @@ static int dma_sampler_iio_dma_buffer_submit(struct iio_dma_buffer_queue *queue,
 					     struct iio_dma_buffer_block *block)
 {
 	struct dma_sampler_state *st = dev_get_drvdata(queue->dev);
+	unsigned int ack;
 	u32 src, dst;
 
 	if (!st->running) {
@@ -315,6 +309,10 @@ static int dma_sampler_iio_dma_buffer_submit(struct iio_dma_buffer_queue *queue,
 		st->running = true;
 	}
 
+	/* Release other buffer half. */
+	ack = st->half ? SAMPLER_ACK_HALF0_BIT : SAMPLER_ACK_HALF1_BIT;
+	dma_sampler_fpga_write(st, SAMPLER_ACK_REG, ack, true);
+
 	/* Wait for buffer. */
 	while (!dma_sampler_buffer_is_ready(st))
 		;
@@ -335,6 +333,8 @@ static int dma_sampler_iio_dma_buffer_submit(struct iio_dma_buffer_queue *queue,
 
 	scoped_guard(spinlock_irqsave, &queue->list_lock)
 		list_add_tail(&block->head, &st->head);
+
+	st->half = !st->half;
 
 	return 0;
 }
