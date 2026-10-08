@@ -8,7 +8,7 @@ SAMPLER_UI_VERSION = 1.0
 SAMPLER_UI_SITE = ../package/sampler-ui/src
 SAMPLER_UI_SITE_METHOD = local
 
-SAMPLER_UI_DEPENDENCIES = sampler-libiio host-nodejs host-python3
+SAMPLER_UI_DEPENDENCIES = sampler-libiio host-nodejs
 
 define SAMPLER_UI_BUILD_CMDS
 	$(TARGET_MAKE_ENV) $(MAKE) CC=$(TARGET_CC) -C $(@D)
