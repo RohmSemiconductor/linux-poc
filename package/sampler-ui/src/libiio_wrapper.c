@@ -23,7 +23,7 @@ struct lib {
 
     bool running;
     int bytes_per_sample;
-    float *samples;
+    unsigned short *samples;
     float scale;
 
     char **sampling_frequencies;
@@ -305,11 +305,11 @@ int set_sampling_frequency(int freq)
     return 0;
 }
 
-float *get_block(size_t *count)
+unsigned short *get_block(size_t *count)
 {
     TRACE();
     const struct iio_block *block;
-    float *sample;
+    unsigned short *sample;
     char dst[8];
     char *src;
 

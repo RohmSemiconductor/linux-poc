@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   WS_URL,
-  MAX_SAMPS,
-  CHUNK_BYTES,
 } from "../config/constants";
 import type { Command, ServerMessage } from "../types/commands";
 
@@ -12,40 +10,22 @@ type ConnectionStatus = "connected" | "disconnected" | "error";
  * Decoded result from one WebSocket binary frame.
  */
 export interface ParsedFrame {
-  samples: Float32Array;
+  samples: Int16Array;
   chunkUsecs: number[];
 }
 
 /**
- * Decode one WebSocket binary frame containing one or more mvaring chunks.
- *
- * Wire format per chunk (little-endian):
- *   [usecs: uint32][samples: MAX_SAMPS × uint32][gpio_lev0: MAX_SAMPS × uint32]
- *
- * ADC extraction mirrors the C macro ADC_RAW_VAL:
- *   byte_swap16(raw & 0xFFFF) & adcMask  →  ADC value (0..adcMask)
- *
- * adcMask must be 2^n - 1 (e.g. 2047, 4095, 65535).
+ * Decode one WebSocket binary frame.
  */
 function parseAdcFrame(buf: ArrayBuffer): ParsedFrame {
-  const numChunks = Math.floor(buf.byteLength / CHUNK_BYTES);
-  if (numChunks === 0) return { samples: new Float32Array(0), chunkUsecs: [] };
-
-  const samples = new Float32Array(numChunks * MAX_SAMPS);
-  const chunkUsecs: number[] = [];
+  const samples = new Int16Array(buf.byteLength / 2);
+  const chunkUsecs: number[] = [0];
   const dv = new DataView(buf);
-  let outIdx = 0;
 
-  for (let c = 0; c < numChunks; c++) {
-    const chunkBase = c * CHUNK_BYTES;
-    chunkUsecs.push(dv.getUint32(chunkBase, true));
+  for (let i = 0, j = 0; i < buf.byteLength; i += 2, j++)
+    samples[j] = dv.getInt16(i, true);
 
-    const samplesOffset = chunkBase + 4; // skip usecs
-    for (let i = 0; i < MAX_SAMPS; i++)
-      samples[outIdx++] = dv.getFloat32(samplesOffset + i * 4, true);
-  }
-
-  return { samples: samples.subarray(0, outIdx), chunkUsecs };
+  return { samples, chunkUsecs };
 }
 
 interface UseWebSocketParams {
@@ -130,19 +110,8 @@ export function useWebSocket({
         if (!(e.data instanceof ArrayBuffer)) return;
         const frame = parseAdcFrame(e.data);
 
-        if (frame.samples.length > 0) {
-          // // DEBUG: mirror the Python [adc] log for comparison
-          // const N_PREVIEW = 8;
-          // const usecs = frame.chunkUsecs[0] ?? 0;
-          // const adcParts = Array.from(
-          //   { length: N_PREVIEW },
-          //   (_, i) => `[${i}]=${frame.samples[i]}`,
-          // );
-          // console.log(
-          //   `[adc] chunks=${frame.chunkUsecs.length} usecs=${usecs} ${adcParts.join(" ")} bytes=${e.data.byteLength}`,
-          // );
+        if (frame.samples.length > 0)
           onDataRef.current?.(frame);
-        }
       };
     }
 

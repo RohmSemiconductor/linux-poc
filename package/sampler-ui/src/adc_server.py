@@ -16,7 +16,6 @@ logging.basicConfig(
 log = logging.getLogger("adc_server")
 logging.getLogger("aiohttp").setLevel(logging.ERROR)
 
-MAX_SAMPS = 36864
 SERVER_PORT = int(os.environ.get("ADC_SERVER_PORT", "8080"))
 
 async def ws_handler(request):
@@ -87,11 +86,7 @@ async def ws_handler(request):
                 return
 
             while True:
-                samples = iio.get_block()[:MAX_SAMPS]
-                payload = (struct.pack("<I", 0) +
-                            struct.pack(f"<{MAX_SAMPS}f", *samples) +
-                            bytes(MAX_SAMPS * 4))
-                await ws.send_bytes(payload)
+                await ws.send_bytes(iio.get_block())
 
         except asyncio.CancelledError:
             iio.disconnect()

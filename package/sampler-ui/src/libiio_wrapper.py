@@ -74,15 +74,16 @@ def set_sampling_frequency(freq: int) -> int:
 
 
 _get_block = _iio.get_block
-_get_block.restype = ctypes.POINTER(ctypes.c_float)
+_get_block.restype = ctypes.POINTER(ctypes.c_ushort)
 _get_block.argtypes = (
     ctypes.POINTER(ctypes.c_size_t),
 )
-def get_block() -> list[int]:
-    byte_count = ctypes.c_size_t()
-    block = _get_block(ctypes.byref(byte_count))
-    sample_count = int(byte_count.value)
-    return block[:sample_count]
+def get_block() -> memoryview[ctypes.c_ushort]:
+    count = ctypes.c_size_t()
+    block = _get_block(ctypes.byref(count))
+    addr = ctypes.addressof(block.contents)
+    buf = (ctypes.c_ushort * int(count.value)).from_address(addr)
+    return memoryview(buf)
 
 
 def get_devices_once() -> list[str]:
