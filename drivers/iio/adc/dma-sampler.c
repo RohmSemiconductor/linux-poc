@@ -18,8 +18,8 @@
 #define SAMPLER_BYTES_PER_WORD		8
 
 #define SAMPLER_BUFFER_SAMPLE_COUNT	SAMPLER_MAX_SAMPLE_COUNT
-#define SAMPLER_BUFFER_BYTE_COUNT	(SAMPLER_BUFFER_SAMPLE_COUNT / \
-					 SAMPLER_SAMPLES_PER_WORD * \
+#define SAMPLER_BUFFER_BYTE_COUNT	(SAMPLER_BUFFER_SAMPLE_COUNT / 	\
+					 SAMPLER_SAMPLES_PER_WORD * 	\
 					 SAMPLER_BYTES_PER_WORD)
 
 #define SAMPLER_ADDRESS			0x60000000
@@ -58,14 +58,14 @@
 #define DMA_INTR_0_MASK_REG		0x014
 #define DMA_INTR_0_CLEAR_REG 		0x018
 
-#define DMA_INTR_INVLD_BUFF_DESC	BIT(3)
-#define DMA_INTR_RD_TRAN		BIT(2)
-#define DMA_INTR_WR_TRAN		BIT(1)
-#define DMA_INTR_OPS_COMPL		BIT(0)
-#define DMA_INTR_CLEAR_ALL		(DMA_INTR_INVLD_BUFF_DESC |	\
-					 DMA_INTR_RD_TRAN |		\
-					 DMA_INTR_WR_TRAN |		\
-					 DMA_INTR_OPS_COMPL)
+#define DMA_INTR_INVLD_BUFF_DESC_BIT	BIT(3)
+#define DMA_INTR_RD_TRAN_BIT		BIT(2)
+#define DMA_INTR_WR_TRAN_BIT		BIT(1)
+#define DMA_INTR_OPS_COMPL_BIT		BIT(0)
+#define DMA_INTR_MASK_ALL		(DMA_INTR_INVLD_BUFF_DESC_BIT |	\
+					 DMA_INTR_RD_TRAN_BIT |		\
+					 DMA_INTR_WR_TRAN_BIT |		\
+					 DMA_INTR_OPS_COMPL_BIT)
 
 #define DMA_DESC_0_CONFIG_REG		0x060
 #define DMA_DESC_0_BYTE_COUNT_REG	0x064
@@ -251,8 +251,8 @@ static irqreturn_t dma_sampler_irq_handler(int irq, void *p)
 	struct dma_sampler_state *st = iio_priv(indio_dev);
 	struct iio_dma_buffer_block *block;
 
-	iowrite32(DMA_INTR_CLEAR_ALL, st->dma_regs + DMA_INTR_0_CLEAR_REG);
-	iowrite32(DMA_INTR_CLEAR_ALL, st->dma_regs + DMA_INTR_0_MASK_REG);
+	iowrite32(DMA_INTR_MASK_ALL, st->dma_regs + DMA_INTR_0_CLEAR_REG);
+	iowrite32(DMA_INTR_MASK_ALL, st->dma_regs + DMA_INTR_0_MASK_REG);
 
 	scoped_guard(spinlock_irqsave, &st->queue.list_lock) {
 		block = list_first_entry_or_null(&st->head,
@@ -291,9 +291,9 @@ static int dma_sampler_iio_dma_buffer_submit(struct iio_dma_buffer_queue *queue,
 		dma_sampler_fpga_write(st, SAMPLER_CAPTURE_COUNT_REG,
 				       SAMPLER_BUFFER_SAMPLE_COUNT * 2, false);
 
-		iowrite32(DMA_INTR_CLEAR_ALL,
+		iowrite32(DMA_INTR_MASK_ALL,
 			  st->dma_regs + DMA_INTR_0_CLEAR_REG);
-		iowrite32(DMA_INTR_CLEAR_ALL,
+		iowrite32(DMA_INTR_MASK_ALL,
 			  st->dma_regs + DMA_INTR_0_MASK_REG);
 		mmiowb();
 
@@ -321,7 +321,7 @@ static int dma_sampler_iio_dma_buffer_submit(struct iio_dma_buffer_queue *queue,
 	dst = block->phys_addr + DMA_DESTINATION_OFFSET;
 
 	/* Setup and start transfer. */
-	iowrite32(DMA_INTR_CLEAR_ALL, st->dma_regs + DMA_INTR_0_CLEAR_REG);
+	iowrite32(DMA_INTR_MASK_ALL, st->dma_regs + DMA_INTR_0_CLEAR_REG);
 	iowrite32(src, st->dma_regs + DMA_DESC_0_SOURCE_ADDR_REG);
 	iowrite32(dst, st->dma_regs + DMA_DESC_0_DEST_ADDR_REG);
 	iowrite32(SAMPLER_BUFFER_BYTE_COUNT,
@@ -456,8 +456,8 @@ static int dma_sampler_probe(struct platform_device *pdev)
 	dma_sampler_fpga_write(st, SAMPLER_CONTROL_REG, 0, false);
 	dma_sampler_set_sampling_freq(st, DMA_SAMPLER_DEFAULT_SAMPLING_FREQ);
 
-	iowrite32(DMA_INTR_CLEAR_ALL, st->dma_regs + DMA_INTR_0_CLEAR_REG);
-	iowrite32(DMA_INTR_CLEAR_ALL, st->dma_regs + DMA_INTR_0_MASK_REG);
+	iowrite32(DMA_INTR_MASK_ALL, st->dma_regs + DMA_INTR_0_CLEAR_REG);
+	iowrite32(DMA_INTR_MASK_ALL, st->dma_regs + DMA_INTR_0_MASK_REG);
 	mmiowb();
 
 	st->irq = platform_get_irq(pdev, 0);
