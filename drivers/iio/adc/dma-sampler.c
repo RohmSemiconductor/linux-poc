@@ -320,6 +320,9 @@ static int dma_sampler_iio_dma_buffer_submit(struct iio_dma_buffer_queue *queue,
 	src = DMA_SOURCE_ADDRESS + st->half * SAMPLER_BUFFER_BYTE_COUNT;
 	dst = block->phys_addr + DMA_DESTINATION_OFFSET;
 
+	scoped_guard(spinlock_irqsave, &queue->list_lock)
+		list_add_tail(&block->head, &st->head);
+
 	/* Setup and start transfer. */
 	iowrite32(DMA_INTR_MASK_ALL, st->dma_regs + DMA_INTR_0_CLEAR_REG);
 	iowrite32(src, st->dma_regs + DMA_DESC_0_SOURCE_ADDR_REG);
@@ -330,9 +333,6 @@ static int dma_sampler_iio_dma_buffer_submit(struct iio_dma_buffer_queue *queue,
 	mmiowb();
 
 	iowrite32(DMA_START_BIT_0, st->dma_regs + DMA_START_OPERATION_REG);
-
-	scoped_guard(spinlock_irqsave, &queue->list_lock)
-		list_add_tail(&block->head, &st->head);
 
 	st->half = !st->half;
 
