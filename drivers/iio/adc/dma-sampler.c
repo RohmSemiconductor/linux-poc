@@ -250,9 +250,13 @@ static irqreturn_t dma_sampler_irq_handler(int irq, void *p)
 	struct iio_dev *indio_dev = p;
 	struct dma_sampler_state *st = iio_priv(indio_dev);
 	struct iio_dma_buffer_block *block;
+	u32 status;
 
-	iowrite32(DMA_INTR_MASK_ALL, st->dma_regs + DMA_INTR_0_CLEAR_REG);
-	iowrite32(DMA_INTR_MASK_ALL, st->dma_regs + DMA_INTR_0_MASK_REG);
+	status = ioread32(st->dma_regs + DMA_INTR_0_STAT_REG);
+	if (!(status & DMA_INTR_OPS_COMPL_BIT)) {
+		dev_err(&indio_dev->dev, "dma operation was not successful\n");
+		goto err;
+	}
 
 	scoped_guard(spinlock_irqsave, &st->queue.list_lock) {
 		block = list_first_entry_or_null(&st->head,
@@ -264,6 +268,10 @@ static irqreturn_t dma_sampler_irq_handler(int irq, void *p)
 
 	if (block)
 		iio_dma_buffer_block_done(block);
+
+err:
+	iowrite32(DMA_INTR_MASK_ALL, st->dma_regs + DMA_INTR_0_CLEAR_REG);
+	iowrite32(DMA_INTR_MASK_ALL, st->dma_regs + DMA_INTR_0_MASK_REG);
 
 	return IRQ_HANDLED;
 }
