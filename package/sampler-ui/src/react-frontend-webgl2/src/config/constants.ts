@@ -4,7 +4,7 @@ export const APP_VERSION = __APP_VERSION__;
 export const WS_URL = `ws://${window.location.hostname}:8080/ws`;
 export const NOT_IMPLEMENTED = true;
 
-export const MAX_SAMPS = 36864;
+export const MAX_SAMPS = 73728;
 
 // CPU / GPU buffer pre-allocation
 export const INIT_CAP = 1_000_000;
