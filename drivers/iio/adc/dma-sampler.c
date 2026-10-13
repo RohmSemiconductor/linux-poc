@@ -452,8 +452,8 @@ static int dma_sampler_probe(struct platform_device *pdev)
 	st->queue.buffer.attrs = NULL;
 	st->queue.buffer.access = &dma_sampler_iio_buffer_access_funcs;
 
-	st->queue.buffer.length = SAMPLER_BUFFER_BYTE_COUNT;
-	st->queue.buffer.watermark = st->queue.buffer.length;
+	st->queue.buffer.length = SAMPLER_BUFFER_SAMPLE_COUNT * 2;
+	st->queue.buffer.watermark = st->queue.buffer.length / 2;
 	st->queue.buffer.direction = IIO_BUFFER_DIRECTION_IN;
 
 	ret = iio_device_attach_buffer(indio_dev, &st->queue.buffer);
