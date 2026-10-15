@@ -32,6 +32,12 @@
 #define DMA_DESTINATION_OFFSET		0x40000000
 
 /*
+ * The input channel is given on bits ADD0-2 which, on a 16-bit little-endian
+ * word, come down to bits 11-13.
+ */
+#define SAMPLER_CHANNEL_SHIFT 		11
+
+/*
  * Sampler bits and registers.
  */
 #define SAMPLER_CONTROL_KEY		0xadca5a5a
@@ -383,7 +389,8 @@ static int dma_sampler_iio_buffer_enable(struct iio_buffer *buffer,
 	dma_sampler_fpga_write(st, SAMPLER_CONTROL_REG, 0, false);
 	mmiowb();
 
-	dma_sampler_fpga_write(st, SAMPLER_SPI_TX_WORD_REG, chan, false);
+	chan <<= SAMPLER_CHANNEL_SHIFT;
+	dma_sampler_fpga_write(st, SAMPLER_SPI_TX_WORD_REG, chan, true);
 
 	return iio_dma_buffer_enable(buffer, indio_dev);
 }
