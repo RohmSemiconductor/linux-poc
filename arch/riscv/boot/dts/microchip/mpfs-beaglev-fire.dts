@@ -36,9 +36,9 @@
 
 	dma_sampler {
 		compatible = "rohm,dma-sampler";
-
 		interrupt-parent = <&plic>;
 		interrupts = <121>;
+		memory-region = <&fpga_ddr_non_cached>;
 	};
 
 	chosen {
@@ -98,6 +98,12 @@
 			no-map;
 			linux,dma-default;
 			alloc-ranges = <0x14 0x12000000 0x0 0x10000000>;
+		};
+
+		fpga_ddr_non_cached: fpga-ddr-non-cached@c0000000 {
+			compatible = "shared-dma-pool";
+			reg = <0x0 0xc0000000 0x0 0x2000000>;
+			no-map;
 		};
 	};
 
