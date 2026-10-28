@@ -1,0 +1,4 @@
+config BR2_PACKAGE_SAMPLER_GATEWARE
+    bool "sampler gateware"
+    help
+      Sampler gateware.
