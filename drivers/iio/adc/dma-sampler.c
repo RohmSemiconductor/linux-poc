@@ -7,6 +7,7 @@
 #include <linux/list.h>
 #include <linux/mod_devicetable.h>
 #include <linux/module.h>
+#include <linux/of_reserved_mem.h>
 #include <linux/platform_device.h>
 
 #include <linux/iio/buffer.h>
@@ -29,7 +30,6 @@
 #define DMA_CONTROLLER_SIZE		0x1000
 
 #define DMA_SOURCE_ADDRESS		0x80000000
-#define DMA_DESTINATION_OFFSET		0x40000000
 
 /*
  * The input channel is given on bits ADD0-2 which, on a 16-bit little-endian
@@ -340,7 +340,7 @@ static int dma_sampler_iio_dma_buffer_submit(struct iio_dma_buffer_queue *queue,
 		;
 
 	src = DMA_SOURCE_ADDRESS + half * SAMPLER_BUFFER_BYTE_COUNT;
-	dst = block->phys_addr + DMA_DESTINATION_OFFSET;
+	dst = block->phys_addr;
 
 	scoped_guard(spinlock_irqsave, &queue->list_lock)
 		list_add_tail(&block->head, &st->head);
@@ -459,6 +459,11 @@ static int dma_sampler_probe(struct platform_device *pdev)
 		return dev_err_probe(dev, -EINVAL,
 				     "failed to map dma registers\n");
 
+	ret = of_reserved_mem_device_init(dev);
+	if (ret)
+		return dev_err_probe(dev, ret,
+				     "failed to assign memory region\n");
+
 	iio_dma_buffer_init(&st->queue, dev, &dma_sampler_iio_dma_buffer_ops);
 	INIT_LIST_HEAD(&st->head);
 
@@ -495,6 +500,11 @@ static int dma_sampler_probe(struct platform_device *pdev)
 	return devm_iio_device_register(dev, indio_dev);
 }
 
+static void dma_sampler_remove(struct platform_device *pdev)
+{
+	of_reserved_mem_device_release(&pdev->dev);
+}
+
 static const struct of_device_id dma_sampler_of_match[] = {
 	{ .compatible = "rohm,dma-sampler" },
 	{ }
@@ -513,6 +523,7 @@ static struct platform_driver dma_sampler_driver = {
 		.of_match_table = dma_sampler_of_match,
 	},
 	.probe = dma_sampler_probe,
+	.remove = dma_sampler_remove,
 	.id_table = dma_sampler_devices_ids,
 };
 module_platform_driver(dma_sampler_driver);
