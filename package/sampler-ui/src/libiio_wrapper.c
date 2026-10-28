@@ -5,7 +5,7 @@
 
 #include <iio/iio.h>
 
-#define BLOCKS_PER_STREAM   8
+#define BLOCKS_PER_STREAM   2
 #define SAMPLES_PER_BLOCK   73728
 
 struct lib {
@@ -22,10 +22,6 @@ struct lib {
     struct iio_stream *stream;
 
     bool running;
-    int bytes_per_sample;
-    unsigned short *samples;
-    float scale;
-
     char **sampling_frequencies;
 };
 static struct lib lib = { .running = false };
@@ -35,6 +31,10 @@ int set_channel(int index);
 
 // #define TRACE() printf("%s\n", __PRETTY_FUNCTION__)
 #define TRACE()
+
+static const struct iio_context_params params = {
+    .timeout_ms = -1,
+};
 
 int connect()
 {
@@ -176,7 +176,6 @@ const char *get_next_channel(void)
 
 int set_channel(int index)
 {
-    const struct iio_data_format *format;
     TRACE();
 
     if (!lib.running || !lib.device)
@@ -187,7 +186,6 @@ int set_channel(int index)
             iio_stream_destroy(lib.stream);
 
         iio_channel_disable(lib.channel, lib.mask);
-        free(lib.samples);
 
         free(lib.sampling_frequencies);
         lib.sampling_frequencies = NULL;
@@ -209,8 +207,6 @@ int set_channel(int index)
     */
     iio_channel_enable(lib.channel, lib.mask);
 
-    format = iio_channel_get_data_format(lib.channel);
-
     /*
      * create stream
      */
@@ -218,17 +214,6 @@ int set_channel(int index)
                                           SAMPLES_PER_BLOCK, lib.mask);
     if (iio_err(lib.stream))
         return iio_err(lib.stream);
-
-    /*
-     * allocate samples buffer; if the channels are all the same, this could
-     * be done in set_device().
-     */
-    lib.samples = malloc(SAMPLES_PER_BLOCK * sizeof(lib.samples));
-    if (!lib.samples)
-        return -ENOMEM;
-
-    lib.bytes_per_sample = format->length / 8;
-    lib.scale = format->scale;
 
     return 0;
 }
@@ -309,33 +294,19 @@ unsigned short *get_block(size_t *count)
 {
     TRACE();
     const struct iio_block *block;
-    unsigned short *sample;
-    char dst[8];
-    char *src;
+    unsigned short *first, *end, *tmp;
 
     if (!lib.channel)
         return NULL;
 
     block = iio_stream_get_next_block(lib.stream);
-    src = iio_block_first(block, lib.channel);
-    *count = ((char *)iio_block_end(block) - src) / lib.bytes_per_sample;
+    first = iio_block_first(block, lib.channel);
+    end = iio_block_end(block);
 
-    for (size_t i = 0; i < *count; i++) {
-        sample = &lib.samples[i];
+    for (tmp = first; tmp != end; tmp++)
+        *tmp = (float)*tmp * (5000.0f / 4096.0f);
 
-        iio_channel_convert(lib.channel, dst, src);
+    *count = end - first;
 
-        switch (lib.bytes_per_sample) {
-        case 2:
-            *sample = *(unsigned short *)dst;
-            break;
-
-            /* TODO: add other sample widths */
-        }
-
-        src += lib.bytes_per_sample;
-        *sample *= lib.scale;
-    }
-
-    return lib.samples;
+    return first;
 }
