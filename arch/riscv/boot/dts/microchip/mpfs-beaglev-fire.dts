@@ -34,8 +34,10 @@
 		mmc1 = &sdmmc;
 	};
 
-	dma_sampler {
+	dma-sampler@60000000 {
 		compatible = "rohm,dma-sampler";
+		reg = <0x0 0x60000000 0x0 0x1000>,
+		      <0x0 0x60010000 0x0 0x1000>;
 		interrupt-parent = <&plic>;
 		interrupts = <121>;
 		memory-region = <&fpga_ddr_non_cached>;
