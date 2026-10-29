@@ -23,12 +23,6 @@
 					 SAMPLER_SAMPLES_PER_WORD * 	\
 					 SAMPLER_BYTES_PER_WORD)
 
-#define SAMPLER_ADDRESS			0x60000000
-#define SAMPLER_SIZE			0x1000
-
-#define DMA_CONTROLLER_ADDRESS		0x60010000
-#define DMA_CONTROLLER_SIZE		0x1000
-
 #define DMA_SOURCE_ADDRESS		0x80000000
 
 /*
@@ -448,15 +442,14 @@ static int dma_sampler_probe(struct platform_device *pdev)
 	indio_dev->num_channels = ARRAY_SIZE(dma_sampler_channels);
 	indio_dev->available_scan_masks = dma_sampler_available_scan_masks;
 
-	st->sampler_regs = devm_ioremap(dev, SAMPLER_ADDRESS, SAMPLER_SIZE);
-	if (!st->sampler_regs)
-		return dev_err_probe(dev, -EINVAL,
+	st->sampler_regs = devm_platform_ioremap_resource(pdev, 0);
+	if (IS_ERR(st->sampler_regs))
+		return dev_err_probe(dev, PTR_ERR(st->sampler_regs),
 				     "failed to map sampler registers\n");
 
-	st->dma_regs = devm_ioremap(dev, DMA_CONTROLLER_ADDRESS,
-				    DMA_CONTROLLER_SIZE);
-	if (!st->dma_regs)
-		return dev_err_probe(dev, -EINVAL,
+	st->dma_regs = devm_platform_ioremap_resource(pdev, 1);
+	if (IS_ERR(st->dma_regs))
+		return dev_err_probe(dev, PTR_ERR(st->dma_regs),
 				     "failed to map dma registers\n");
 
 	ret = of_reserved_mem_device_init(dev);
