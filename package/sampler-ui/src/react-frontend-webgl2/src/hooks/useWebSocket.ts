@@ -14,13 +14,22 @@ export interface ParsedFrame {
   chunkUsecs: number[];
 }
 
+let usecs: number = 0;
+
+export function resetUsecs() {
+  usecs = 0;
+}
+
 /**
  * Decode one WebSocket binary frame.
  */
 function parseAdcFrame(buf: ArrayBuffer): ParsedFrame {
-  const samples = new Int16Array(buf.byteLength / 2);
-  const chunkUsecs: number[] = [0];
+  const sampleCount = buf.byteLength / 2;
+  const samples = new Int16Array(sampleCount);
+  const chunkUsecs: number[] = [usecs];
   const dv = new DataView(buf);
+
+  usecs += sampleCount;
 
   for (let i = 0, j = 0; i < buf.byteLength; i += 2, j++)
     samples[j] = dv.getInt16(i, true);

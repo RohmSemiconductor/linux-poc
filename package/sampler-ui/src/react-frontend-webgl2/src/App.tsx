@@ -1,6 +1,6 @@
 import { useRef, useCallback, useState, type WheelEvent, useEffect } from "react";
 import type { PlotData } from "./types";
-import { useWebSocket, type ParsedFrame } from "./hooks/useWebSocket";
+import { resetUsecs, useWebSocket, type ParsedFrame } from "./hooks/useWebSocket";
 import { WGLPlot } from "./components/WGLPlot";
 import { StatusDot } from "./components/StatusDot";
 // import { generateSineData } from "./utils/sineData";
@@ -194,6 +194,7 @@ function App() {
     dataRef.current.chunkUsecs = new Float64Array(
       Math.ceil(INIT_CAP / MAX_SAMPS),
     );
+    resetUsecs();
   }
 
   return (
