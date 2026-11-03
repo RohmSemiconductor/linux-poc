@@ -1,8 +1,10 @@
 config BR2_PACKAGE_SAMPLER
     bool "sampler"
+    depends on !BR2_PACKAGE_ADCDEMO_UI
     select BR2_PACKAGE_SAMPLER_GATEWARE
     select BR2_PACKAGE_SAMPLER_NET
     select BR2_PACKAGE_SAMPLER_UI
     select BR2_PACKAGE_LINUX_TOOLS_IIO
     help
-      Sampler package.
+      Sampler package (IIO based). Hidden when BR2_PACKAGE_ADCDEMO_UI is
+      enabled, the two demos are mutually exclusive.

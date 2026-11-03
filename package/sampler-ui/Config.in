@@ -1,5 +1,8 @@
 config BR2_PACKAGE_SAMPLER_UI
     bool "sampler libiio wrapper"
+    depends on !BR2_PACKAGE_ADCDEMO_UI
+    select BR2_PACKAGE_LIGHTTPD
+    select BR2_PACKAGE_LIGHTTPD_BZIP2
     select BR2_PACKAGE_SAMPLER_LIBIIO
     select BR2_PACKAGE_HOST_NODEJS_BIN
     help

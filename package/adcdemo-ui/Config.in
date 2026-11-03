@@ -1,0 +1,16 @@
+config BR2_PACKAGE_ADCDEMO_UI
+    bool "adcdemo ui"
+    select BR2_PACKAGE_BEAGLEVFIRE_ADCDEMO
+    select BR2_PACKAGE_SAMPLER_GATEWARE
+    select BR2_PACKAGE_SAMPLER_NET
+    select BR2_PACKAGE_PYTHON3
+    select BR2_PACKAGE_PYTHON_AIOHTTP
+    select BR2_PACKAGE_BUSYBOX_SHOW_OTHERS
+    select BR2_PACKAGE_COREUTILS
+    select BR2_PACKAGE_HOST_NODEJS_BIN
+    help
+      UIO based ADC demo UI: aiohttp server (reads the mvaring shared
+      memory ring written by bvf_adc_stream) and the React front-end.
+
+      Mutually exclusive with the IIO based BR2_PACKAGE_SAMPLER (and
+      its sampler-ui): those packages are hidden when this is enabled.

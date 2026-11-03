@@ -1,0 +1,6 @@
+config BR2_PACKAGE_BEAGLEVFIRE_ADCDEMO
+    bool "beaglevfire adcdemo"
+    help
+      UIO based ADC streamer for BeagleV Fire. Reads samples from the
+      FPGA sampler via UIO and DMA, and writes them to a ring-buffer in
+      shared memory.
