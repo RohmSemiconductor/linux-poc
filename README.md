@@ -72,16 +72,3 @@ $ /usr/share/microchip/update-gateware.sh <path-to-LinuxProgramming-directory>
 ```
 
 The BeagleV-Fire will restart itself after updating.
-
-
-### Running the UI
-
-From the project root, run the frontend and server using the `run` script.
-
-```sh
-$ ./run frontend
-```
-
-```sh
-$ sudo ./run server
-```
