@@ -294,7 +294,7 @@ unsigned short *get_block(size_t *count)
 {
     TRACE();
     const struct iio_block *block;
-    unsigned short *first, *end, *tmp;
+    unsigned short *first, *end;
 
     if (!lib.channel)
         return NULL;
@@ -302,9 +302,6 @@ unsigned short *get_block(size_t *count)
     block = iio_stream_get_next_block(lib.stream);
     first = iio_block_first(block, lib.channel);
     end = iio_block_end(block);
-
-    for (tmp = first; tmp != end; tmp++)
-        *tmp = (float)*tmp * (5000.0f / 4096.0f);
 
     *count = end - first;
 
