@@ -15,3 +15,8 @@ export interface View {
 
 /** Physical-pixel cursor coordinates within the canvas, or null when not hovering. */
 export type HoverPhys = { x: number; y: number } | null;
+
+/** Plotter modes */
+export type PlotModes = "time" | "fft";
+
+export type YScale = "raw" | "voltage";

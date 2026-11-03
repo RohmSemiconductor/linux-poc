@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   WS_URL,
+  // MAX_SAMPS,
+  // CHUNK_BYTES,
+  DEFAULT_ADC_MAX,
 } from "../config/constants";
 import type { Command, ServerMessage } from "../types/commands";
 
@@ -10,7 +13,7 @@ type ConnectionStatus = "connected" | "disconnected" | "error";
  * Decoded result from one WebSocket binary frame.
  */
 export interface ParsedFrame {
-  samples: Int16Array;
+  samples: Float32Array;
   chunkUsecs: number[];
 }
 
@@ -23,16 +26,16 @@ export function resetUsecs() {
 /**
  * Decode one WebSocket binary frame.
  */
-function parseAdcFrame(buf: ArrayBuffer): ParsedFrame {
+function parseAdcFrame(buf: ArrayBuffer, adcMask: number): ParsedFrame {
   const sampleCount = buf.byteLength / 2;
-  const samples = new Int16Array(sampleCount);
+  const samples = new Float32Array(sampleCount);
   const chunkUsecs: number[] = [usecs];
   const dv = new DataView(buf);
 
   usecs += sampleCount;
 
   for (let i = 0, j = 0; i < buf.byteLength; i += 2, j++)
-    samples[j] = dv.getInt16(i, true);
+    samples[j] = dv.getUint16(i, true) & adcMask;
 
   return { samples, chunkUsecs };
 }
@@ -57,6 +60,7 @@ const RECONNECT_INTERVAL_MS = 2000;
 export function useWebSocket({
   url = WS_URL,
   onData,
+  adcMax = DEFAULT_ADC_MAX,
   onInfo,
 }: UseWebSocketParams): UseWebSocketReturn {
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
@@ -70,6 +74,10 @@ export function useWebSocket({
   useEffect(() => {
     onDataRef.current = onData;
   }, [onData]);
+  const adcMaskRef = useRef(adcMax);
+  useEffect(() => {
+    adcMaskRef.current = adcMax;
+  }, [adcMax]);
   const onInfoRef = useRef(onInfo);
   useEffect(() => {
     onInfoRef.current = onInfo;
@@ -117,10 +125,21 @@ export function useWebSocket({
           return;
         }
         if (!(e.data instanceof ArrayBuffer)) return;
-        const frame = parseAdcFrame(e.data);
+        const frame = parseAdcFrame(e.data, adcMaskRef.current);
 
-        if (frame.samples.length > 0)
+        if (frame.samples.length > 0) {
+          // // DEBUG: mirror the Python [adc] log for comparison
+          // const N_PREVIEW = 8;
+          // const usecs = frame.chunkUsecs[0] ?? 0;
+          // const adcParts = Array.from(
+          //   { length: N_PREVIEW },
+          //   (_, i) => `[${i}]=${frame.samples[i]}`,
+          // );
+          // console.log(
+          //   `[adc] chunks=${frame.chunkUsecs.length} usecs=${usecs} ${adcParts.join(" ")} bytes=${e.data.byteLength}`,
+          // );
           onDataRef.current?.(frame);
+        }
       };
     }
 

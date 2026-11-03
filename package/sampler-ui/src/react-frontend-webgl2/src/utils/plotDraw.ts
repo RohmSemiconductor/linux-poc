@@ -1,6 +1,7 @@
-import type { View, HoverPhys } from "../types";
+import type { View, HoverPhys, YScale } from "../types";
 import type { ThemeColors } from "./themeColors";
 import { MAX_SAMPS } from "../config/constants";
+import { FFT_DB_FLOOR, type FFTResult } from "./fft";
 
 export const PAD = { l: 62, b: 34, t: 10, r: 12 } as const;
 
@@ -133,6 +134,8 @@ export function drawAxes(
   colors: ThemeColors,
   chunkUsecs: Float64Array,
   chunkCount: number,
+  y_scale: YScale,
+  voltage: number,
 ): void {
   const pl = PAD.l * dpr,
     pb = PAD.b * dpr,
@@ -170,8 +173,14 @@ export function drawAxes(
   ctx.textBaseline = "middle";
   for (const v of yLabels) {
     const py = pt + ph * (1 - v / adcMax);
-    ctx.strokeText(String(v), pl - 5 * dpr, py);
-    ctx.fillText(String(v), pl - 5 * dpr, py);
+
+    const label =
+      y_scale === "voltage"
+        ? `${((v / adcMax) * voltage).toFixed(2)}V`
+        : String(v);
+
+    ctx.strokeText(label, pl - 5 * dpr, py);
+    ctx.fillText(label, pl - 5 * dpr, py);
     ctx.beginPath();
     ctx.moveTo(pl - 3 * dpr, py);
     ctx.lineTo(pl, py);
@@ -279,7 +288,6 @@ export function drawOverlays(
   W: number,
   H: number,
   dpr: number,
-  count: number,
   actualSampleRate: number | null,
   sampleRate: number,
   colors: ThemeColors,
@@ -295,18 +303,6 @@ export function drawOverlays(
   const fs = 11 * dpr;
   ctx.font = `${fs}px monospace`;
   ctx.lineJoin = "round";
-
-  // Sample count watermark
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  ctx.strokeStyle = "black";
-  ctx.lineWidth = 3 * dpr;
-  const watermark = `n = ${count.toLocaleString()}`;
-  const wx = pl + 4 * dpr;
-  const wy = pt + 2 * dpr;
-  ctx.strokeText(watermark, wx, wy);
-  ctx.fillStyle = colors.foreground;
-  ctx.fillText(watermark, wx, wy);
 
   if (actualSampleRate !== null && actualSampleRate !== sampleRate) {
     // Actual sample rate mismatch warning — pulses red when rate differs from requested
@@ -341,6 +337,8 @@ export function drawCrosshair(
   colors: ThemeColors,
   chunkUsecs: Float64Array,
   chunkCount: number,
+  y_scale: YScale,
+  voltage: number,
 ): void {
   const pl = PAD.l * dpr,
     _pb = PAD.b * dpr,
@@ -398,13 +396,230 @@ export function drawCrosshair(
   const baseUs = sampleToUsecs(0, chunkUsecs, chunkCount);
   const tUs = sampleToUsecs(sampleIdx, chunkUsecs, chunkCount);
   let label: string;
+  const yDisplay =
+    y_scale === "voltage"
+      ? `${((yVal / adcMax) * voltage).toFixed(3)}V`
+      : String(Math.round(yVal));
+
   if (baseUs !== null && tUs !== null) {
     const relUs = tUs - baseUs;
     const [mult, unit] = timeUnit(relUs || 1);
-    label = `t: ${formatTime(relUs, mult, unit)}  y: ${Math.round(yVal)}`;
+    label = `t: ${formatTime(relUs, mult, unit)}  y: ${yDisplay}`;
   } else {
-    label = `x: ${sampleIdx}  y: ${Math.round(yVal)}`;
+    label = `x: ${sampleIdx}  y: ${yDisplay}`;
   }
+  const tw = ctx.measureText(label).width + 14 * dpr;
+  const th = fs + 10 * dpr;
+  let tx = hx + 14 * dpr;
+  let ty = dataY - th;
+  if (tx + tw > pl + pw) tx = hx - tw - 14 * dpr;
+  ty = Math.max(pt + 2 * dpr, Math.min(pt + ph - th - 2 * dpr, ty));
+
+  ctx.fillStyle = colors.popover90;
+  ctx.strokeStyle = colors.border;
+  ctx.lineWidth = dpr;
+  ctx.fillRect(tx, ty, tw, th);
+  ctx.strokeRect(tx, ty, tw, th);
+
+  ctx.fillStyle = colors.popoverForeground;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, tx + 7 * dpr, ty + th / 2);
+
+  ctx.restore();
+}
+
+function formatFreq(hz: number): string {
+  if (hz >= 1_000_000)
+    return (hz / 1_000_000).toFixed(2).replace(/\.?0+$/, "") + " MHz";
+  if (hz >= 1_000)
+    return (hz / 1_000).toFixed(2).replace(/\.?0+$/, "") + " kHz";
+  return hz.toFixed(1).replace(/\.?0+$/, "") + " Hz";
+}
+
+export function drawFFTAxes(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  dpr: number,
+  result: FFTResult,
+  xMinBin: number,
+  xMaxBin: number,
+  colors: ThemeColors,
+): void {
+  const pl = PAD.l * dpr,
+    pb = PAD.b * dpr,
+    pt = PAD.t * dpr,
+    pr = PAD.r * dpr;
+  const pw = W - pl - pr;
+  const ph = H - pt - pb;
+
+  ctx.clearRect(0, 0, W, H);
+  if (pw <= 0 || ph <= 0 || xMaxBin <= xMinBin) return;
+  ctx.save();
+
+  const { freqBinHz } = result;
+  const visMinHz = xMinBin * freqBinHz;
+  const visMaxHz = xMaxBin * freqBinHz;
+  const visRange = xMaxBin - xMinBin;
+  const dbMin = FFT_DB_FLOOR;
+  const dbMax = 0;
+  const dbRange = dbMax - dbMin;
+
+  // --- grid ---
+  const xStepBins = Math.max(
+    1,
+    Math.round(niceStep(visRange, Math.max(1, Math.floor(pw / (80 * dpr))))),
+  );
+  ctx.strokeStyle = colors.foreground40;
+  ctx.lineWidth = dpr;
+  ctx.setLineDash([3 * dpr, 4 * dpr]);
+
+  const xStart = Math.ceil(xMinBin / xStepBins) * xStepBins;
+  for (let bi = xStart; bi <= xMaxBin; bi += xStepBins) {
+    const px = pl + ((bi - xMinBin) / visRange) * pw;
+    ctx.beginPath();
+    ctx.moveTo(px, pt);
+    ctx.lineTo(px, pt + ph);
+    ctx.stroke();
+  }
+  // horizontal grid at every 20 dB
+  for (let db = dbMin; db <= dbMax; db += 20) {
+    const py = pt + ph * (1 - (db - dbMin) / dbRange);
+    ctx.beginPath();
+    ctx.moveTo(pl, py);
+    ctx.lineTo(pl + pw, py);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  // --- border ---
+  ctx.strokeStyle = colors.border;
+  ctx.lineWidth = dpr;
+  ctx.strokeRect(pl, pt, pw, ph);
+
+  const fs = 11 * dpr;
+  ctx.font = `${fs}px monospace`;
+  ctx.fillStyle = colors.foreground;
+  ctx.strokeStyle = "black";
+  ctx.lineWidth = 3 * dpr;
+  ctx.lineJoin = "round";
+
+  // --- Y-axis (dB) ---
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  for (let db = dbMin; db <= dbMax; db += 20) {
+    const py = pt + ph * (1 - (db - dbMin) / dbRange);
+    const label = `${db} dB`;
+    ctx.strokeText(label, pl - 5 * dpr, py);
+    ctx.fillText(label, pl - 5 * dpr, py);
+    ctx.beginPath();
+    ctx.strokeStyle = colors.border;
+    ctx.lineWidth = dpr;
+    ctx.moveTo(pl - 3 * dpr, py);
+    ctx.lineTo(pl, py);
+    ctx.stroke();
+    ctx.strokeStyle = "black";
+    ctx.lineWidth = 3 * dpr;
+  }
+
+  // --- X-axis (frequency) ---
+  ctx.textBaseline = "top";
+  const targetSteps = Math.max(1, Math.floor(pw / (80 * dpr)));
+  const hzStep = niceStep(visMaxHz - visMinHz, targetSteps);
+  const firstHz = Math.ceil(visMinHz / hzStep) * hzStep;
+
+  for (let hz = firstHz; hz <= visMaxHz + hzStep * 0.5; hz += hzStep) {
+    const bi = hz / freqBinHz;
+    const px = pl + ((bi - xMinBin) / visRange) * pw;
+    if (px < pl - 1 || px > pl + pw + 1) continue;
+    const frac = (px - pl) / pw;
+    ctx.textAlign = frac < 0.05 ? "left" : frac > 0.95 ? "right" : "center";
+    const label = formatFreq(hz);
+    ctx.strokeStyle = "black";
+    ctx.lineWidth = 3 * dpr;
+    ctx.strokeText(label, px, pt + ph + 4 * dpr);
+    ctx.fillStyle = colors.foreground;
+    ctx.fillText(label, px, pt + ph + 4 * dpr);
+    ctx.strokeStyle = colors.border;
+    ctx.lineWidth = dpr;
+    ctx.beginPath();
+    ctx.moveTo(px, pt + ph);
+    ctx.lineTo(px, pt + ph + 3 * dpr);
+    ctx.stroke();
+    ctx.strokeStyle = "black";
+    ctx.lineWidth = 3 * dpr;
+  }
+
+  ctx.restore();
+}
+
+export function drawFFTCrosshair(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  dpr: number,
+  result: FFTResult,
+  hoverPhys: HoverPhys,
+  xMinBin: number,
+  xMaxBin: number,
+  colors: ThemeColors,
+): void {
+  const pl = PAD.l * dpr,
+    pb = PAD.b * dpr,
+    pt = PAD.t * dpr,
+    pr = PAD.r * dpr;
+  const pw = W - pl - pr;
+  const ph = H - pt - pb;
+
+  ctx.clearRect(0, 0, W, H);
+  if (!hoverPhys || pw <= 0 || ph <= 0 || xMaxBin <= xMinBin) return;
+
+  const { x: hx, y: hy } = hoverPhys;
+  if (hx < pl || hx > pl + pw || hy < pt || hy > pt + ph) return;
+
+  const { magnitudes, binCount, freqBinHz } = result;
+  const dbMin = FFT_DB_FLOOR;
+  const dbMax = 0;
+  const dbRange = dbMax - dbMin;
+  const visRange = xMaxBin - xMinBin;
+
+  const t = (hx - pl) / pw;
+  const binF = xMinBin + t * visRange;
+  const bin = Math.round(Math.max(0, Math.min(binCount - 1, binF)));
+  const db = magnitudes[bin] ?? dbMin;
+  const hz = bin * freqBinHz;
+
+  const dataX = pl + ((bin - xMinBin) / visRange) * pw;
+  const dataY = pt + ph * (1 - (db - dbMin) / dbRange);
+
+  ctx.save();
+  ctx.lineWidth = dpr;
+  ctx.setLineDash([4 * dpr, 4 * dpr]);
+  ctx.strokeStyle = colors.foreground20;
+
+  ctx.beginPath();
+  ctx.moveTo(hx, pt);
+  ctx.lineTo(hx, pt + ph);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(pl, dataY);
+  ctx.lineTo(pl + pw, dataY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = colors.foreground;
+  ctx.strokeStyle = colors.foreground60;
+  ctx.lineWidth = 1.5 * dpr;
+  ctx.beginPath();
+  ctx.arc(dataX, dataY, 4 * dpr, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  const fs = 11 * dpr;
+  ctx.font = `${fs}px monospace`;
+  const label = `f: ${formatFreq(hz)}  |  ${db.toFixed(1)} dB`;
   const tw = ctx.measureText(label).width + 14 * dpr;
   const th = fs + 10 * dpr;
   let tx = hx + 14 * dpr;

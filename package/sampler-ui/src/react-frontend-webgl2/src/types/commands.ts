@@ -2,9 +2,10 @@ export type Command =
   | {
       command: "start";
       durationMs?: number;
-      device: string;
-      channel: string;
-      samplingFrequency: string;
+      device?: string;
+      channel?: string;
+      samplingFrequency?: string;
+      sampleRate?: number;
     }
   | { command: "stop" }
   | { command: "get_devices"; }
@@ -14,6 +15,7 @@ export type Command =
 export type ServerMessage =
   | { type: "started" }
   | { type: "stopped"; actualDurationMs: number }
+  | { type: "actual_sample_rate"; value: number }
   | { type: "error"; message: string }
   | { type: "get_devices"; devices: string[] }
   | { type: "get_channels"; channels: string[] }
