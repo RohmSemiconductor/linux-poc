@@ -82,10 +82,10 @@ export function SettingsSheet({
             value={backend}
             onValueChange={(v) => setBackend(v)}
           >
-            <SelectTrigger id="backends" className="w-32 h-8 text-sm">
+            <SelectTrigger id="backends" className="w-40 h-8 text-sm">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent position="popper">
               {BACKENDS.map((e) => (
                 <SelectItem key={e.value} value={e.value}>
                   {e.label}
@@ -102,10 +102,10 @@ export function SettingsSheet({
             onValueChange={(v) => setDevice(v)}
             disabled={backend === "uio"}
           >
-            <SelectTrigger id="devices" className="w-32 h-8 text-sm">
+            <SelectTrigger id="devices" className="w-40 h-8 text-sm">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent position="popper">
               {devices.map((e) => (
                 <SelectItem key={e} value={e}>
                   {e}
@@ -122,10 +122,10 @@ export function SettingsSheet({
             onValueChange={(v) => setChannel(v)}
             disabled={backend === "uio"}
           >
-            <SelectTrigger id="channels" className="w-32 h-8 text-sm">
+            <SelectTrigger id="channels" className="w-40 h-8 text-sm">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent position="popper">
               {channels.map((e) => (
                 <SelectItem key={e} value={e}>
                   {e}
@@ -141,10 +141,10 @@ export function SettingsSheet({
             value={String(adcMax)}
             onValueChange={(v) => setAdcMax(Number(v))}
           >
-            <SelectTrigger id="adc-select" className="w-32 h-8 text-sm">
+            <SelectTrigger id="adc-select" className="w-40 h-8 text-sm">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent position="popper">
               {ADC_OPTIONS.map((opt) => (
                 <SelectItem key={opt.value} value={String(opt.value)}>
                   {opt.label}
@@ -157,10 +157,10 @@ export function SettingsSheet({
             Y Scale
           </Label>
           <Select value={yScale} onValueChange={(v) => setYScale(v as YScale)}>
-            <SelectTrigger id="yscale-select" className="w-32 h-8 text-sm">
+            <SelectTrigger id="yscale-select" className="w-40 h-8 text-sm">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent position="popper">
               <SelectItem value="raw">Raw Value</SelectItem>
               <SelectItem value="voltage">Voltage</SelectItem>
             </SelectContent>
@@ -174,10 +174,10 @@ export function SettingsSheet({
             onValueChange={(v) => setRefVoltage(Number(v))}
             disabled={yScale === "raw"}
           >
-            <SelectTrigger id="vol-select" className="w-32 h-8 text-sm">
+            <SelectTrigger id="vol-select" className="w-40 h-8 text-sm">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent position="popper">
               {REF_VOLTAGE_OPTIONS.map((opt) => (
                 <SelectItem key={opt.value} value={String(opt.value)}>
                   {opt.label}
@@ -197,7 +197,7 @@ export function SettingsSheet({
               fallback={1000}
               value={sampleRate}
               onChange={setSampleRate}
-              className="w-32 h-8 text-sm"
+              className="w-40 h-8 text-sm"
               disabled={streaming}
             />
             :
@@ -205,10 +205,10 @@ export function SettingsSheet({
               value={String(sampleRate)}
               onValueChange={(v) => setSampleRate(Number(v))}
             >
-              <SelectTrigger id="samplerate" className="w-32 h-8 text-sm">
+              <SelectTrigger id="samplerate" className="w-40 h-8 text-sm">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper">
                 {sampleRates.map((e) => (
                   <SelectItem key={e} value={String(e)}>
                     {e}
@@ -225,10 +225,10 @@ export function SettingsSheet({
             value={plotMode}
             onValueChange={(v) => setPlotMode(v as PlotModes)}
           >
-            <SelectTrigger id="plotmode-select" className="w-32 h-8 text-sm">
+            <SelectTrigger id="plotmode-select" className="w-40 h-8 text-sm">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent position="popper">
               <SelectItem value="time">Time</SelectItem>
               <SelectItem value="fft">FFT</SelectItem>
             </SelectContent>
