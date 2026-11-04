@@ -52,7 +52,7 @@ async def ws_handler(request):
             await asyncio.gather(watch_task, return_exceptions=True)
         log.info("rpi_adc_stream process stopped (pid %d, rc %d)", proc.pid, proc.returncode)
 
-    async def stream_from_libiio(dev: str, chan: str, freq: str):
+    async def stream_from_libiio(dev: str, chan: str, freq: int):
         """Stream blocks from LibIIO using the C/Python wrapper"""
 
         try:
@@ -80,7 +80,7 @@ async def ws_handler(request):
             if not sampling_frequencies:
                 iio.disconnect()
                 return
-            if iio.set_sampling_frequency(int(freq)) != 0:
+            if iio.set_sampling_frequency(freq) != 0:
                 iio.disconnect()
                 return
 
@@ -138,7 +138,7 @@ async def ws_handler(request):
                         duration_ms     = data.get("durationMs")    # None = stream indefinitely
                         t_stream_start  = time.perf_counter()
 
-                        if not "device" in data or not "channel" in data or not "samplingFrequency" in data:
+                        if not "device" in data or not "channel" in data or not "sampleRate" in data:
                             await ws.send_str(json.dumps({
                                 "type": "error",
                                 "message": "Missing device, channel or sampling frequency"
@@ -147,7 +147,7 @@ async def ws_handler(request):
 
                         task = asyncio.create_task(stream_from_libiio(data["device"],
                                                                       data["channel"],
-                                                                      data["samplingFrequency"]))
+                                                                      data["sampleRate"]))
                         log.info("Streaming started")
 
                         await ws.send_str(json.dumps({"type": "started"}))
@@ -199,12 +199,12 @@ async def ws_handler(request):
                             "message": "Missing device",
                         }))
 
-                case "get_sampling_frequencies":
+                case "get_sample_rates":
                     if "device" in data and "channel" in data:
                         await ws.send_str(json.dumps({
-                            "type": "get_sampling_frequencies",
-                            "sampling_frequencies": iio.get_sampling_frequencies_once(data["device"],
-                                                                                      data["channel"]),
+                            "type": "get_sample_rates",
+                            "sampleRates": iio.get_sampling_frequencies_once(data["device"],
+                                                                             data["channel"]),
                         }))
                     else:
                         await ws .send_str(json.dumps({

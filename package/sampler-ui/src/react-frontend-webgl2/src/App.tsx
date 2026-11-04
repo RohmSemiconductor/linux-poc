@@ -64,8 +64,6 @@ function App() {
   const [live, setLive] = useState(false);
   const [fitAll, setFitAll] = useState(false);
   const [windowSize, setWindowSize] = useState(LIVE_WINDOW_SIZE);
-  const [sampleRate, setSampleRate] = useState(DEFAULT_SAMPLE_RATE);
-  const [actualSampleRate, setActualSampleRate] = useState<number | null>(null);
   const [adcMax, setAdcMax] = useState<number>(DEFAULT_ADC_MAX);
   const [refVoltage, setRefVoltage] = useState<number>(DEFAULT_REF_VOLTAGE);
   // null = continuous, otherwise duration in ms
@@ -81,7 +79,11 @@ function App() {
   const [devices, setDevices] = useState<string[]>([]);
   const [channel, setChannel] = useState("");
   const [channels, setChannels] = useState<string[]>([]);
-  const [samplingFrequencies, setSamplingFrequencies] = useState<string[]>([]);
+
+  const [sampleRate, setSampleRate] = useState(DEFAULT_SAMPLE_RATE);
+  const [sampleRates, setSampleRates] = useState<number[]>([]);
+  // The IIO backend does not care about this.
+  const [actualSampleRate, setActualSampleRate] = useState<number | null>(null);
 
   // Recompute stats every 200 ms from the visible window
   useEffect(() => {
@@ -179,10 +181,10 @@ function App() {
           if (msg.channels.length)
             setChannel(msg.channels[0]);
           break;
-        case "get_sampling_frequencies":
-          setSamplingFrequencies(msg.sampling_frequencies);
-          if (msg.sampling_frequencies.length)
-            setSampleRate(Number(msg.sampling_frequencies[msg.sampling_frequencies.length - 1]))
+        case "get_sample_rates":
+          setSampleRates(msg.sampleRates);
+          if (msg.sampleRates.length)
+            setSampleRate(Number(msg.sampleRates[msg.sampleRates.length - 1]))
           break;
         case "actual_sample_rate":
           console.log("Actual sample-rate:", msg.value, "Hz");
@@ -220,7 +222,7 @@ function App() {
       setChannels([]);
       setChannel("");
 
-      setSamplingFrequencies([]);
+      setSampleRates([]);
       setSampleRate(0);
     }
   }, [status]);
@@ -237,7 +239,7 @@ function App() {
   useEffect(() => {
     if (channel) {
       sendCommand({
-        command: "get_sampling_frequencies",
+        command: "get_sample_rates",
         device: device,
         channel: channel,
       });
@@ -349,8 +351,8 @@ function App() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent position="popper" >
-                {samplingFrequencies.map((e) => (
-                  <SelectItem key={e} value={e}>
+                {sampleRates.map((e) => (
+                  <SelectItem key={e} value={e.toString()}>
                     {e}
                   </SelectItem>
                 ))}

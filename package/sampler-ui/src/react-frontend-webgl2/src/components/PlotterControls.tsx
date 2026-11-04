@@ -91,7 +91,7 @@ export function PlotterControls({
               command: "start",
               device,
               channel,
-              samplingFrequency: sampleRate.toString(),
+              sampleRate: sampleRate,
               ...(durationMs !== null && { durationMs }),
             });
           }}
