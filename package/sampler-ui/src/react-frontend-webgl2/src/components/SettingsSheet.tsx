@@ -26,11 +26,18 @@ export function SettingsSheet({
   setRefVoltage,
   sampleRate,
   setSampleRate,
+  sampleRates,
   streaming,
   yScale,
   setYScale,
   plotMode,
   setPlotMode,
+  device,
+  setDevice,
+  devices,
+  channel,
+  setChannel,
+  channels,
   backend,
   setBackend,
 }: {
@@ -40,11 +47,18 @@ export function SettingsSheet({
   setRefVoltage: (v: number) => void;
   sampleRate: number;
   setSampleRate: (v: number) => void;
+  sampleRates: number[];
   streaming: boolean;
   yScale: YScale;
   setYScale: (v: YScale) => void;
   plotMode: PlotModes;
   setPlotMode: (v: PlotModes) => void;
+  device: string;
+  setDevice: (v: string) => void;
+  devices: string[];
+  channel: string;
+  setChannel: (v: string) => void;
+  channels: string[];
   backend: string;
   setBackend: (v: string) => void;
 }) {
@@ -71,10 +85,50 @@ export function SettingsSheet({
             <SelectTrigger id="backends" className="w-32 h-8 text-sm">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent position="popper">
+            <SelectContent>
               {BACKENDS.map((e) => (
                 <SelectItem key={e.value} value={e.value}>
                   {e.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Label htmlFor="devices" className="text-sm">
+            IIO Device
+          </Label>
+          <Select
+            value={device}
+            onValueChange={(v) => setDevice(v)}
+            disabled={backend === "uio"}
+          >
+            <SelectTrigger id="devices" className="w-32 h-8 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {devices.map((e) => (
+                <SelectItem key={e} value={e}>
+                  {e}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Label htmlFor="channels" className="text-sm">
+            IIO Channel
+          </Label>
+          <Select
+            value={channel}
+            onValueChange={(v) => setChannel(v)}
+            disabled={backend === "uio"}
+          >
+            <SelectTrigger id="channels" className="w-32 h-8 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {channels.map((e) => (
+                <SelectItem key={e} value={e}>
+                  {e}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -98,6 +152,7 @@ export function SettingsSheet({
               ))}
             </SelectContent>
           </Select>
+
           <Label htmlFor="yscale-select" className="text-sm">
             Y Scale
           </Label>
@@ -134,16 +189,35 @@ export function SettingsSheet({
           <Label htmlFor="samplerate" className="text-sm">
             Sample Rate (S/s)
           </Label>
-          <NumberInput
-            id="samplerate"
-            min={1000}
-            step={1000}
-            fallback={1000}
-            value={sampleRate}
-            onChange={setSampleRate}
-            className="w-32 h-8 text-sm"
-            disabled={streaming}
-          />
+          {backend === "uio" ?
+            <NumberInput
+              id="samplerate"
+              min={1000}
+              step={1000}
+              fallback={1000}
+              value={sampleRate}
+              onChange={setSampleRate}
+              className="w-32 h-8 text-sm"
+              disabled={streaming}
+            />
+            :
+            <Select
+              value={String(sampleRate)}
+              onValueChange={(v) => setSampleRate(Number(v))}
+            >
+              <SelectTrigger id="samplerate" className="w-32 h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {sampleRates.map((e) => (
+                  <SelectItem key={e} value={String(e)}>
+                    {e}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          }
+
           <Label htmlFor="plotmode" className="text-sm">
             Plot Mode
           </Label>

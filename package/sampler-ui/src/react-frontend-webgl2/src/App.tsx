@@ -17,13 +17,6 @@ import { saveCanvasesAsImage } from "./utils/saveImage";
 import { saveAsCsv } from "./utils/saveCsv";
 import { loadCsvFile } from "./utils/loadCsv";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Toaster } from "@/components/ui/sonner";
 import {
@@ -214,21 +207,18 @@ function App() {
   );
 
   useEffect(() => {
-    if (status == "connected") {
+    if (backend !== "iio" || status !== "connected") {
+      setDevices([]);
+      setDevice("");
+      setChannels([]);
+      setChannel("");
+      setSampleRates([]);
+    } else {
       sendCommand({
         command: "get_devices",
       });
-    } else {
-      setDevices([]);
-      setDevice("");
-
-      setChannels([]);
-      setChannel("");
-
-      setSampleRates([]);
-      setSampleRate(0);
     }
-  }, [status]);
+  }, [backend, status]);
 
   useEffect(() => {
     if (device) {
@@ -297,88 +287,6 @@ function App() {
         >
           Sine 10M
         </Button> */}
-                <Separator orientation="vertical" className="h-6" />
-        <div className="flex gap-2 text-white">
-          <div
-            title="Select IIO device"
-            className="flex items-center gap-1.5 text-xs"
-          >
-            Device:
-            <Select
-              value={device}
-              onValueChange={(e) => setDevice(e)}
-            >
-              <SelectTrigger className="w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent position="popper" >
-                {devices.map((e) => (
-                  <SelectItem key={e} value={e}>
-                    {e}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div
-            title="Select IIO channel"
-            className="flex items-center gap-1.5 text-xs"
-          >
-            Channel:
-            <Select
-              value={channel}
-              onValueChange={(e) => setChannel(e)}
-            >
-              <SelectTrigger className="w-48" >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent position="popper" >
-                {channels.map((e) => (
-                  <SelectItem key={e} value={e}>
-                    {e}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div
-            title="Select sampling frequency"
-            className="flex items-center gap-1.5 text-xs"
-          >
-            Sampling frequency:
-            <Select
-              value={sampleRate.toString()}
-              onValueChange={(e) => setSampleRate(Number(e))}
-            >
-              <SelectTrigger className="w-48" >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent position="popper" >
-                {sampleRates.map((e) => (
-                  <SelectItem key={e} value={e.toString()}>
-                    {e}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <Button
-            variant="green"
-            title="Refresh IIO devices"
-            disabled={streaming}
-            onClick={() => {
-              setDevice("");
-              setChannel("");
-              setSampleRate(0);
-
-              sendCommand({
-                command: "get_devices",
-              });
-            }}
-          >
-            Refresh
-          </Button>
-        </div>
         <div className="ml-auto flex gap-2">
           <input
             ref={importInputRef}
@@ -490,11 +398,18 @@ function App() {
             setRefVoltage={setRefVoltage}
             sampleRate={sampleRate}
             setSampleRate={setSampleRate}
+            sampleRates={sampleRates}
             streaming={streaming}
             yScale={yScale}
             setYScale={setYScale}
             plotMode={plotMode}
             setPlotMode={handlePlotModeChange}
+            device={device}
+            setDevice={setDevice}
+            devices={devices}
+            channel={channel}
+            setChannel={setChannel}
+            channels={channels}
             backend={backend}
             setBackend={setBackend}
           />
