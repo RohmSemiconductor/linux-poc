@@ -42,6 +42,7 @@ import {
   LIVE_WINDOW_STEP_SIZE,
   APP_VERSION,
   DEFAULT_REF_VOLTAGE,
+  DEFAULT_BACKEND,
 } from "@/config/constants";
 import { toast } from "sonner";
 import { SettingsSheet } from "./components/SettingsSheet";
@@ -74,6 +75,8 @@ function App() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [totalCount, setTotalCount] = useState(0);
   const viewRef = useRef<View>({ xMin: 0, xMax: 1 });
+
+  const [backend, setBackend] = useState(DEFAULT_BACKEND);
 
   const [device, setDevice] = useState("");
   const [devices, setDevices] = useState<string[]>([]);
@@ -492,6 +495,8 @@ function App() {
             setYScale={setYScale}
             plotMode={plotMode}
             setPlotMode={handlePlotModeChange}
+            backend={backend}
+            setBackend={setBackend}
           />
         </div>
       </div>

@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "./ui/select";
 import { Label } from "./ui/label";
-import { ADC_OPTIONS, REF_VOLTAGE_OPTIONS } from "@/config/constants";
+import { ADC_OPTIONS, REF_VOLTAGE_OPTIONS, BACKENDS } from "@/config/constants";
 import type { PlotModes, YScale } from "@/types";
 import { NumberInput } from "./ui/number-input";
 
@@ -31,6 +31,8 @@ export function SettingsSheet({
   setYScale,
   plotMode,
   setPlotMode,
+  backend,
+  setBackend,
 }: {
   adcMax: number;
   setAdcMax: (v: number) => void;
@@ -43,6 +45,8 @@ export function SettingsSheet({
   setYScale: (v: YScale) => void;
   plotMode: PlotModes;
   setPlotMode: (v: PlotModes) => void;
+  backend: string;
+  setBackend: (v: string) => void;
 }) {
   return (
     <Sheet>
@@ -57,6 +61,25 @@ export function SettingsSheet({
         </SheetHeader>
 
         <div className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-3">
+          <Label htmlFor="backends" className="text-sm">
+            Backend
+          </Label>
+          <Select
+            value={backend}
+            onValueChange={(v) => setBackend(v)}
+          >
+            <SelectTrigger id="backends" className="w-32 h-8 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper">
+              {BACKENDS.map((e) => (
+                <SelectItem key={e.value} value={e.value}>
+                  {e.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           <Label htmlFor="adc-select" className="text-sm">
             ADC Resolution
           </Label>

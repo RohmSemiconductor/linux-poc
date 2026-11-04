@@ -34,5 +34,10 @@ export const REF_VOLTAGE_OPTIONS = [
   { label: "3.3V", value: 3.3 },
   { label: "5.0V", value: 5.0 },
 ];
-
 export const DEFAULT_REF_VOLTAGE = REF_VOLTAGE_OPTIONS[0].value;
+
+export const BACKENDS = [
+  { label: "IIO", value: "iio" },
+  { label: "Userspace I/O", value: "uio" },
+];
+export const DEFAULT_BACKEND = BACKENDS[1].value;
