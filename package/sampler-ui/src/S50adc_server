@@ -9,7 +9,7 @@ PID_FILE="/var/run/$NAME.pid"
 
 start() {
     printf "Starting adc_server: "
-    start-stop-daemon -S -qbm -p $PID_FILE -x /usr/bin/python3 -- /ui/adc_server.py
+    ADC_USE_IIO=1 start-stop-daemon -S -qbm -p $PID_FILE -x /usr/bin/python3 -- /ui/adc_server.py
     echo "OK"
 }
 stop() {
