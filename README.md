@@ -61,14 +61,12 @@ $ ssh root@192.168.255.27
 
 ### Updating the gateware
 
-Copy the `LinuxProgramming` directory under the `buildroot/output/target`
-directory. This requires the image to be rebuilt with `make`.
-
 On the BeagleV-Fire, update the gateware using the provided
-`update-gateware.sh` script.
+`update-gateware.sh` script. The `LinuxProgramming` directory
+contains the gateware, and can be found in the root directory.
 
 ```sh
-$ /usr/share/microchip/update-gateware.sh <path-to-LinuxProgramming-directory>
+$ /usr/share/microchip/update-gateware.sh /LinuxProgramming
 ```
 
 The BeagleV-Fire will restart itself after updating.
