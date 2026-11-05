@@ -1,8 +1,10 @@
 declare const __APP_VERSION__: string;
 export const APP_VERSION = __APP_VERSION__;
 
-const hostname = import.meta.env.VITE_WS_HOST ?? `${window.location.hostname}:8080`
-export const WS_URL = `ws://${hostname}/ws`;
+const host = import.meta.env.VITE_WS_HOST ?? window.location.hostname;
+const port = import.meta.env.VITE_WS_PORT ?? 8080;
+
+export const WS_URL = `ws://${host}:${port}/ws`;
 export const NOT_IMPLEMENTED = true;
 
 export const MAX_SAMPS_IIO = 73728;
