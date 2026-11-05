@@ -5,8 +5,11 @@ const hostname = import.meta.env.VITE_WS_HOST ?? `${window.location.hostname}:80
 export const WS_URL = `ws://${hostname}/ws`;
 export const NOT_IMPLEMENTED = true;
 
-export const MAX_SAMPS = 73728;
-export const CHUNK_BYTES = 4 + MAX_SAMPS * 4 + MAX_SAMPS * 4;
+export const MAX_SAMPS_IIO = 73728;
+
+// mvaring chunk layout (must match struct adc_data in C code)
+export const MAX_SAMPS_MVARING = 1024;
+export const CHUNK_BYTES = 4 + MAX_SAMPS_MVARING * 4 + MAX_SAMPS_MVARING * 4;
 
 // CPU / GPU buffer pre-allocation
 export const INIT_CAP = 1_000_000;

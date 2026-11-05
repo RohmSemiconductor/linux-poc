@@ -34,6 +34,7 @@ interface WGLPlotProps {
   onWheel?: (e: React.WheelEvent<HTMLDivElement>) => void;
   /** Optional ref that WGLPlot keeps up-to-date with the current visible view (sample-index space). */
   viewRef?: React.RefObject<View>;
+  maxSamps: number;
 }
 
 export function WGLPlot({
@@ -52,6 +53,7 @@ export function WGLPlot({
   voltageRef = 3.3,
   onWheel,
   viewRef: externalViewRef,
+  maxSamps,
 }: WGLPlotProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const _internalViewRef = useRef<View>({ xMin: 0, xMax: 1 });
@@ -528,6 +530,7 @@ export function WGLPlot({
             dataRef.current.chunkCount,
             y_scale,
             voltageRef,
+            maxSamps,
           );
         } else if (plotMode === "fft") {
           const fftAxesResult: FFTResult = lastFFTResult ?? {
@@ -571,6 +574,7 @@ export function WGLPlot({
             dataRef.current.chunkCount,
             y_scale,
             voltageRef,
+            maxSamps,
           );
         } else if (plotMode === "fft" && lastFFTResult) {
           drawFFTCrosshair(

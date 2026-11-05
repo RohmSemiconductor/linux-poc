@@ -26,7 +26,8 @@ import {
 } from "@phosphor-icons/react";
 import {
   INIT_CAP,
-  MAX_SAMPS,
+  MAX_SAMPS_IIO,
+  MAX_SAMPS_MVARING,
   DEFAULT_SAMPLE_RATE,
   DEFAULT_ADC_MAX,
   LIVE_WINDOW_SIZE,
@@ -44,15 +45,6 @@ import { InfoCard } from "./components/InfoCard";
 // shadcn preset: --preset b4hIZmq00
 
 function App() {
-  // All sample data lives in a plain ref — no state, no re-renders on arrival.
-  // Float32Array stores Uint16 values exactly (0–65535).
-  const dataRef = useRef<PlotData>({
-    ys: new Float32Array(INIT_CAP),
-    count: 0,
-    chunkUsecs: new Float64Array(Math.ceil(INIT_CAP / MAX_SAMPS)),
-    chunkCount: 0,
-  });
-
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const [live, setLive] = useState(false);
@@ -70,6 +62,16 @@ function App() {
   const viewRef = useRef<View>({ xMin: 0, xMax: 1 });
 
   const [backend, setBackend] = useState(DEFAULT_BACKEND);
+  const maxSampsRef = useRef(MAX_SAMPS_MVARING);
+
+  // All sample data lives in a plain ref — no state, no re-renders on arrival.
+  // Float32Array stores Uint16 values exactly (0–65535).
+  const dataRef = useRef<PlotData>({
+    ys: new Float32Array(INIT_CAP),
+    count: 0,
+    chunkUsecs: new Float64Array(Math.ceil(INIT_CAP / maxSampsRef.current)),
+    chunkCount: 0,
+  });
 
   const [device, setDevice] = useState("");
   const [devices, setDevices] = useState<string[]>([]);
@@ -221,6 +223,13 @@ function App() {
   }, [backend, status]);
 
   useEffect(() => {
+    if (backend === "iio")
+      maxSampsRef.current = MAX_SAMPS_IIO;
+    else
+      maxSampsRef.current = MAX_SAMPS_MVARING;
+  }, [backend]);
+
+  useEffect(() => {
     if (device) {
       sendCommand({
         command: "get_channels",
@@ -244,7 +253,7 @@ function App() {
     dataRef.current.ys = new Float32Array(INIT_CAP);
     dataRef.current.chunkCount = 0;
     dataRef.current.chunkUsecs = new Float64Array(
-      Math.ceil(INIT_CAP / MAX_SAMPS),
+      Math.ceil(INIT_CAP / maxSampsRef.current),
     );
     resetUsecs();
   }
@@ -298,6 +307,7 @@ function App() {
               if (!file) return;
               loadCsvFile(
                 file,
+                maxSampsRef.current,
                 (data) => {
                   dataRef.current = data;
                   toast.success("Data imported successfully", {
@@ -324,8 +334,10 @@ function App() {
             variant="outline"
             title="Export all samples to CSV"
             onClick={() =>
-              saveAsCsv(dataRef.current, (e) =>
-                toast.error(`Export failed: ${e}`, {
+              saveAsCsv(
+                dataRef.current,
+                maxSampsRef.current,
+                (e) => toast.error(`Export failed: ${e}`, {
                   position: "top-center",
                 }),
               )
@@ -359,6 +371,7 @@ function App() {
         y_scale={yScale}
         voltageRef={refVoltage}
         viewRef={viewRef}
+        maxSamps={maxSampsRef.current}
       />
 
       <StatsBar

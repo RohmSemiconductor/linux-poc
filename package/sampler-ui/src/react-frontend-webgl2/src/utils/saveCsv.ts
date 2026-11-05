@@ -1,14 +1,14 @@
 import type { PlotData } from "../types";
-import { MAX_SAMPS } from "../config/constants";
 
 function sampleToUsecs(
   idx: number,
   chunkUsecs: Float64Array,
   chunkCount: number,
+  maxSamps: number,
 ): number | null {
   if (chunkCount === 0) return null;
-  const ci = Math.floor(idx / MAX_SAMPS);
-  const frac = (idx % MAX_SAMPS) / MAX_SAMPS;
+  const ci = Math.floor(idx / maxSamps);
+  const frac = (idx % maxSamps) / maxSamps;
 
   if (ci + 1 < chunkCount) {
     return chunkUsecs[ci] + frac * (chunkUsecs[ci + 1] - chunkUsecs[ci]);
@@ -29,6 +29,7 @@ function sampleToUsecs(
 
 export function saveAsCsv(
   data: PlotData,
+  maxSamps: number,
   onError: (msg: string) => void,
 ): void {
   try {
@@ -37,7 +38,7 @@ export function saveAsCsv(
 
     const hasTime = chunkCount > 0;
     const header = hasTime ? "time_us,adc_value\n" : "adc_value\n";
-    const t0 = hasTime ? (sampleToUsecs(0, chunkUsecs, chunkCount) ?? 0) : 0;
+    const t0 = hasTime ? (sampleToUsecs(0, chunkUsecs, chunkCount, maxSamps) ?? 0) : 0;
 
     const CHUNK = 65536;
     const parts: string[] = [header];
@@ -47,7 +48,7 @@ export function saveAsCsv(
       const rows: string[] = [];
       for (let j = i; j < end; j++) {
         if (hasTime) {
-          const t = sampleToUsecs(j, chunkUsecs, chunkCount);
+          const t = sampleToUsecs(j, chunkUsecs, chunkCount, maxSamps);
           rows.push(`${t !== null ? (t - t0).toFixed(3) : ""},${ys[j]}`);
         } else {
           rows.push(`${ys[j]}`);

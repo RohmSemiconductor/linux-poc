@@ -1,8 +1,8 @@
 import type { PlotData } from "../types";
-import { MAX_SAMPS } from "../config/constants";
 
 export function loadCsvFile(
   file: File,
+  maxSamps: number,
   onDone: (data: PlotData) => void,
   onError: (msg: string) => void,
 ): void {
@@ -20,7 +20,7 @@ export function loadCsvFile(
         throw new Error("Invalid CSV format");
       }
 
-      onDone(parseCsv(result));
+      onDone(parseCsv(result, maxSamps));
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
     }
@@ -28,7 +28,7 @@ export function loadCsvFile(
   reader.readAsText(file);
 }
 
-function parseCsv(text: string): PlotData {
+function parseCsv(text: string, maxSamps: number): PlotData {
   const lines = text.split("\n");
   if (lines.length < 2) throw new Error("CSV has no data rows");
 
@@ -45,7 +45,7 @@ function parseCsv(text: string): PlotData {
   if (count === 0) throw new Error("CSV has no data rows");
 
   const ys = new Float32Array(count);
-  const chunkCount = hasTime ? Math.ceil(count / MAX_SAMPS) : 0;
+  const chunkCount = hasTime ? Math.ceil(count / maxSamps) : 0;
   const chunkUsecs = new Float64Array(Math.max(chunkCount, 1));
 
   let row = 0;
@@ -60,8 +60,8 @@ function parseCsv(text: string): PlotData {
 
     if (hasTime) {
       // Store one timestamp per chunk: use the first sample of each chunk
-      const ci = Math.floor(row / MAX_SAMPS);
-      if (row % MAX_SAMPS === 0) {
+      const ci = Math.floor(row / maxSamps);
+      if (row % maxSamps === 0) {
         const t = parseFloat(cols[0]);
         if (!isFinite(t)) throw new Error(`Bad time_us on line ${i + 1}`);
         chunkUsecs[ci] = t;

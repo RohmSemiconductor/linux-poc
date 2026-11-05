@@ -1,6 +1,5 @@
 import type { View, HoverPhys, YScale } from "../types";
 import type { ThemeColors } from "./themeColors";
-import { MAX_SAMPS } from "../config/constants";
 import { FFT_DB_FLOOR, type FFTResult } from "./fft";
 
 export const PAD = { l: 62, b: 34, t: 10, r: 12 } as const;
@@ -13,10 +12,11 @@ function sampleToUsecs(
   idx: number,
   chunkUsecs: Float64Array,
   chunkCount: number,
+  maxSamps: number,
 ): number | null {
   if (chunkCount === 0) return null;
-  const ci = Math.floor(idx / MAX_SAMPS);
-  const frac = (idx % MAX_SAMPS) / MAX_SAMPS;
+  const ci = Math.floor(idx / maxSamps);
+  const frac = (idx % maxSamps) / maxSamps;
 
   if (ci < 0) {
     if (chunkCount >= 2) {
@@ -136,6 +136,7 @@ export function drawAxes(
   chunkCount: number,
   y_scale: YScale,
   voltage: number,
+  maxSamps: number,
 ): void {
   const pl = PAD.l * dpr,
     pb = PAD.b * dpr,
@@ -193,11 +194,11 @@ export function drawAxes(
 
   // X-axis labels — Saleae-style: absolute time at major boundaries, relative offsets between
   ctx.textBaseline = "top";
-  const baseUs = sampleToUsecs(0, chunkUsecs, chunkCount);
+  const baseUs = sampleToUsecs(0, chunkUsecs, chunkCount, maxSamps);
   const clampedXMin = Math.max(0, xMin);
   const clampedXMax = Math.min(count - 1, xMax);
-  const tMinUs = sampleToUsecs(clampedXMin, chunkUsecs, chunkCount);
-  const tMaxUs = sampleToUsecs(clampedXMax, chunkUsecs, chunkCount);
+  const tMinUs = sampleToUsecs(clampedXMin, chunkUsecs, chunkCount, maxSamps);
+  const tMaxUs = sampleToUsecs(clampedXMax, chunkUsecs, chunkCount, maxSamps);
   const hasTime =
     chunkCount >= 2 &&
     baseUs !== null &&
@@ -212,8 +213,8 @@ export function drawAxes(
     const xi1 = Math.max(0, Math.min(count - 1, xStart + xStep));
     const stepUs =
       Math.abs(
-        sampleToUsecs(xi1, chunkUsecs, chunkCount)! -
-          sampleToUsecs(xi0, chunkUsecs, chunkCount)!,
+        sampleToUsecs(xi1, chunkUsecs, chunkCount, maxSamps)! -
+          sampleToUsecs(xi0, chunkUsecs, chunkCount, maxSamps)!,
       ) || 1;
 
     // Major interval: next nice value >= ~6x the grid step
@@ -227,7 +228,7 @@ export function drawAxes(
     for (let xi = xStart; xi <= xMax; xi += xStep) {
       const px = pl + ((xi - xMin) / xRange) * pw;
       const clampedIdx = Math.max(0, Math.min(count - 1, xi));
-      const tAbs = sampleToUsecs(clampedIdx, chunkUsecs, chunkCount)! - baseUs!;
+      const tAbs = sampleToUsecs(clampedIdx, chunkUsecs, chunkCount, maxSamps)! - baseUs!;
       const majorIdx = Math.floor(tAbs / majorUs);
       const isAnchor = majorIdx !== prevMajorIdx;
       const majorBoundaryUs = majorIdx * majorUs;
@@ -339,6 +340,7 @@ export function drawCrosshair(
   chunkCount: number,
   y_scale: YScale,
   voltage: number,
+  maxSamps: number,
 ): void {
   const pl = PAD.l * dpr,
     _pb = PAD.b * dpr,
@@ -393,8 +395,8 @@ export function drawCrosshair(
   // tooltip
   const fs = 11 * dpr;
   ctx.font = `${fs}px monospace`;
-  const baseUs = sampleToUsecs(0, chunkUsecs, chunkCount);
-  const tUs = sampleToUsecs(sampleIdx, chunkUsecs, chunkCount);
+  const baseUs = sampleToUsecs(0, chunkUsecs, chunkCount, maxSamps);
+  const tUs = sampleToUsecs(sampleIdx, chunkUsecs, chunkCount, maxSamps);
   let label: string;
   const yDisplay =
     y_scale === "voltage"
