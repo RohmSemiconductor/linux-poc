@@ -164,6 +164,7 @@ function App() {
   }, []);
 
   const { status, streaming, sendCommand } = useWebSocket({
+    backend,
     onData: handleData,
     adcMax,
     onInfo: (msg) => {
@@ -255,7 +256,8 @@ function App() {
     dataRef.current.chunkUsecs = new Float64Array(
       Math.ceil(INIT_CAP / maxSampsRef.current),
     );
-    resetUsecs();
+    if (backend === "iio")
+      resetUsecs();
   }
 
   function handlePlotModeChange(mode: PlotModes) {

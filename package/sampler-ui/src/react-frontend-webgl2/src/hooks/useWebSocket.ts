@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   WS_URL,
-  // MAX_SAMPS,
-  // CHUNK_BYTES,
+  MAX_SAMPS_MVARING,
+  CHUNK_BYTES,
   DEFAULT_ADC_MAX,
 } from "../config/constants";
 import type { Command, ServerMessage } from "../types/commands";
@@ -17,6 +17,42 @@ export interface ParsedFrame {
   chunkUsecs: number[];
 }
 
+/**
+ * Decode one WebSocket binary frame containing one or more mvaring chunks.
+ *
+ * Wire format per chunk (little-endian):
+ *   [usecs: uint32][samples: MAX_SAMPS × uint32][gpio_lev0: MAX_SAMPS × uint32]
+ *
+ * ADC extraction mirrors the C macro ADC_RAW_VAL:
+ *   byte_swap16(raw & 0xFFFF) & adcMask  →  ADC value (0..adcMask)
+ *
+ * adcMask must be 2^n - 1 (e.g. 2047, 4095, 65535).
+ */
+function parseAdcFrameMvaring(buf: ArrayBuffer, adcMask: number): ParsedFrame {
+  const numChunks = Math.floor(buf.byteLength / CHUNK_BYTES);
+  if (numChunks === 0) return { samples: new Float32Array(0), chunkUsecs: [] };
+
+  const samples = new Float32Array(numChunks * MAX_SAMPS_MVARING);
+  const chunkUsecs: number[] = [];
+  const dv = new DataView(buf);
+  let outIdx = 0;
+
+  for (let c = 0; c < numChunks; c++) {
+    const chunkBase = c * CHUNK_BYTES;
+    chunkUsecs.push(dv.getUint32(chunkBase, true));
+    const samplesOffset = chunkBase + 4; // skip usecs
+    for (let i = 0; i < MAX_SAMPS_MVARING; i++) {
+      const raw32 = dv.getUint32(samplesOffset + i * 4, true);
+      const raw16 = raw32 & 0xffff;
+      // byte-swap 16-bit then apply caller-supplied bit-depth mask
+      const swapped = ((raw16 & 0xff) << 8) | ((raw16 >> 8) & 0xff);
+      samples[outIdx++] = swapped & adcMask;
+    }
+  }
+
+  return { samples: samples.subarray(0, outIdx), chunkUsecs };
+}
+
 let usecs: number = 0;
 
 export function resetUsecs() {
@@ -26,7 +62,7 @@ export function resetUsecs() {
 /**
  * Decode one WebSocket binary frame.
  */
-function parseAdcFrame(buf: ArrayBuffer, adcMask: number): ParsedFrame {
+function parseAdcFrameIIO(buf: ArrayBuffer, adcMask: number): ParsedFrame {
   const sampleCount = buf.byteLength / 2;
   const samples = new Float32Array(sampleCount);
   const chunkUsecs: number[] = [usecs];
@@ -40,8 +76,16 @@ function parseAdcFrame(buf: ArrayBuffer, adcMask: number): ParsedFrame {
   return { samples, chunkUsecs };
 }
 
+function parseAdcFrame(buf: ArrayBuffer, adcMask: number, backend: string): ParsedFrame {
+  if (backend === "iio")
+    return parseAdcFrameIIO(buf, adcMask);
+  else
+    return parseAdcFrameMvaring(buf, adcMask);
+}
+
 interface UseWebSocketParams {
   url?: string;
+  backend: string;
   onData: (frame: ParsedFrame) => void;
   /** Bitmask derived from the selected ADC bit depth, e.g. 2047 (11-bit) or 4095 (12-bit). */
   adcMax?: number;
@@ -59,6 +103,7 @@ const RECONNECT_INTERVAL_MS = 2000;
 
 export function useWebSocket({
   url = WS_URL,
+  backend,
   onData,
   adcMax = DEFAULT_ADC_MAX,
   onInfo,
@@ -125,7 +170,7 @@ export function useWebSocket({
           return;
         }
         if (!(e.data instanceof ArrayBuffer)) return;
-        const frame = parseAdcFrame(e.data, adcMaskRef.current);
+        const frame = parseAdcFrame(e.data, adcMaskRef.current, backend);
 
         if (frame.samples.length > 0) {
           // // DEBUG: mirror the Python [adc] log for comparison
