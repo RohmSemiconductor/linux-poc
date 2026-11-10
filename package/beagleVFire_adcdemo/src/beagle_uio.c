@@ -225,11 +225,15 @@ const struct spi_rate_preset *bvf_rate_by_ksps(uint32_t ksps)
 {
 	size_t i;
 
-	for (i = 0; i < sizeof(rate_presets) / sizeof(rate_presets[0]); i++)
-		if (rate_presets[i].sample_rate_sps == ksps * 1000U)
-			return &rate_presets[i];
+	for (i = 0; i < sizeof(rate_presets) / sizeof(rate_presets[0]) - 1; i++)
+		if (rate_presets[i].sample_rate_sps >= ksps * 1000U) {
+			printf("jee, %u <= %u\n", rate_presets[i].sample_rate_sps, ksps * 1000U);
+			break;
+		}
 
-	return NULL;
+	printf("Using: %u, asked for %u\n", rate_presets[i].sample_rate_sps, ksps * 1000U);
+
+	return &rate_presets[i];
 }
 
 const struct spi_rate_preset *bvf_active_rate(struct bvf_uio *dev)
