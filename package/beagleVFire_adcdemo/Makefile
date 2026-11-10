@@ -12,6 +12,7 @@ SRC=src/bvf_backend.c src/beagle_uio.c
 # HDR2=inc/mvaring.h inc/common.h inc/adc_common.h
 # SRC2=src/shmem.c src/mvaring.c src/adcdemo_helpers.c
 OUT=bin/bvf_adc_stream
+SEQ=bin/bvf_seq_check
 HDR=inc/beagle_uio.h inc/bvf_adc_data.h inc/common.h inc/adc_common.h
 DISPSRC=rpi_opengl_graph.c shmem.c mvaring.c adcdemo_helpers.c
 DISPLDFLAGS=-lm -lglut -lGLEW -lGL
@@ -20,7 +21,7 @@ DISPLDFLAGS=-lm -lglut -lGLEW -lGL
 INSLDFLAGS=-lncurses -lm
 CC=gcc
 
-all: $(OUT)
+all: $(OUT) $(SEQ)
 # $(INSOUT)
 # dbg: $(OUT)_dbg $(DISPOUT)_dbg $(OUT2)_dbg $(INSOUT)_dbg
 # Library is rebuilt by its own Makefile (a no-op when up to date)
@@ -38,6 +39,10 @@ FORCE:
 $(OUT): $(SRC) $(HDR) $(MVALIB) $(SHMLIB) $(STRLIB)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(INCFLAGS) -o $(OUT) $(SRC) $(STRLIB) $(MVALIB) $(SHMLIB) $(LDFLAGS)
+
+$(SEQ): test/seq_check.c $(HDR) $(MVALIB) $(SHMLIB)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) $(INCFLAGS) -Iinc -o $(SEQ) test/seq_check.c $(MVALIB) $(SHMLIB) $(LDFLAGS)
 
 $(OUT2): $(SRC2) $(HDR2)
 	$(CC) $(CFLAGS) -o $(OUT2) $(SRC2)
@@ -64,5 +69,5 @@ clean:
 	$(MAKE) -C $(MVADIR) clean
 	$(MAKE) -C $(SHMDIR) clean
 	$(MAKE) -C $(STRDIR) clean
-	rm -rf $(DISPOUT) $(OUT) $(OUT2) $(INSOUT)
+	rm -rf $(DISPOUT) $(OUT) $(SEQ) $(OUT2) $(INSOUT)
 	rm -rf $(DISPOUT)_dbg $(OUT)_dbg $(OUT2)_dbg $(INSOUT)_dbg
