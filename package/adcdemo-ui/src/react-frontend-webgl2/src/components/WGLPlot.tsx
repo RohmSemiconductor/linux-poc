@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { PlotData, View, HoverPhys, PlotModes, YScale } from "../types";
-import { VERT, FRAG, compileShader } from "../utils/glsl";
+import type { PlotData, View, PlotModes, YScale } from "../types";
 import {
   PAD,
   drawAxes,
@@ -8,17 +7,45 @@ import {
   drawOverlays,
   drawFFTAxes,
   drawFFTCrosshair,
+  drawHistogramAxes,
+  drawHistogramCrosshair,
 } from "../utils/plotDraw";
 import { getThemeColors } from "../utils/themeColors";
-import { INIT_GPU_CAP, ZOOM_FACTOR, MIN_VISIBLE } from "../config/constants";
-import { computeFFT, FFT_DB_FLOOR } from "../utils/fft";
+import {
+  computeFFT,
+  createFFTWorkspace,
+  FFT_DB_FLOOR,
+} from "../utils/fft";
 import type { FFTResult } from "../utils/fft";
+import { computeHistogram, updateHistogram } from "../utils/histogram";
+import type { HistogramResult } from "../utils/histogram";
+import {
+  buildMinMaxDecimation,
+  MinMaxPyramid,
+} from "../utils/decimate";
+import { saveCanvasesAsImage } from "../utils/saveImage";
+import {
+  clampFFTView,
+  clampHistView,
+  createWGLPlotCanvases,
+  createWGLPlotWebGLContext,
+  drawWGLPlotSeries,
+  disposeWGLPlotWebGL,
+  initializeWGLPlotWebGL,
+} from "../utils/WGLPLotUtils";
+import { createWGLPlotInteractionHandlers } from "./WGLPlotInteractions";
+import type { WGLPlotInteractionState } from "./WGLPlotInteractions";
 
 /* ── component ───────────────────────────────────────────────────────────── */
+
+const TIME_COLOR = new Float32Array([57 / 255, 255 / 255, 110 / 255]);
+const FFT_COLOR = new Float32Array([255 / 255, 200 / 255, 50 / 255]);
+const HISTOGRAM_COLOR = new Float32Array([100 / 255, 200 / 255, 255 / 255]);
 
 interface WGLPlotProps {
   id: string;
   dataRef: React.RefObject<PlotData>;
+  saveRequestRef?: React.RefObject<number>;
   height?: number | string;
   style?: React.CSSProperties;
   sampleRate?: number;
@@ -39,6 +66,7 @@ interface WGLPlotProps {
 export function WGLPlot({
   id,
   dataRef,
+  saveRequestRef,
   height = 400,
   style,
   sampleRate = 1,
@@ -58,133 +86,238 @@ export function WGLPlot({
   const viewRef = externalViewRef ?? _internalViewRef;
   const autoFitRef = useRef(true);
   const wasLiveRef = useRef(false);
-  const fitAllRef = useRef(fitAll);
-  useEffect(() => {
-    fitAllRef.current = fitAll;
-  }, [fitAll]);
-  const plotModeRef = useRef(plotMode);
-  useEffect(() => {
-    plotModeRef.current = plotMode;
-  }, [plotMode]);
+  const plotPropsRef = useRef({
+    live,
+    fitAll,
+    windowSize,
+    sampleRate,
+    actualSampleRate,
+    adcMax,
+    plotMode,
+    y_scale,
+    voltageRef,
+  });
+  const invalidatePlotRef = useRef<
+    ((resetDerivedState: boolean, currentLive: boolean) => void) | null
+  >(null);
   const fftViewRef = useRef<View>({ xMin: 0, xMax: -1 }); // xMax=-1 = uninitialized
-  const actualSampleRateRef = useRef(actualSampleRate);
+  const histViewRef = useRef<View>({ xMin: 0, xMax: -1 });
+
   useEffect(() => {
-    actualSampleRateRef.current = actualSampleRate;
-  }, [actualSampleRate]);
-  const windowSizeRef = useRef(windowSize);
-  useEffect(() => {
-    windowSizeRef.current = windowSize;
-  }, [windowSize]);
+    const previous = plotPropsRef.current;
+    const current = {
+      live,
+      fitAll,
+      windowSize,
+      sampleRate,
+      actualSampleRate,
+      adcMax,
+      plotMode,
+      y_scale,
+      voltageRef,
+    };
+    plotPropsRef.current = current;
+
+    const resetDerivedState =
+      previous.live !== current.live ||
+      previous.sampleRate !== current.sampleRate ||
+      previous.adcMax !== current.adcMax ||
+      previous.plotMode !== current.plotMode ||
+      previous.y_scale !== current.y_scale ||
+      previous.voltageRef !== current.voltageRef;
+    if (resetDerivedState) {
+      invalidatePlotRef.current?.(true, current.live);
+    } else if (previous.actualSampleRate !== current.actualSampleRate) {
+      invalidatePlotRef.current?.(false, current.live);
+    }
+  }, [
+    live,
+    fitAll,
+    windowSize,
+    sampleRate,
+    actualSampleRate,
+    adcMax,
+    plotMode,
+    y_scale,
+    voltageRef,
+  ]);
 
   useEffect(() => {
     const _wrap = wrapRef.current;
     if (!_wrap) return;
     const wrap: HTMLDivElement = _wrap;
 
-    /* ── three stacked canvases ──────────────────────────────────────── */
-    const glCanvas = document.createElement("canvas");
-    const axisCanvas = document.createElement("canvas");
-    const hoverCanvas = document.createElement("canvas");
-
-    for (const c of [glCanvas, axisCanvas, hoverCanvas]) {
-      Object.assign(c.style, {
-        position: "absolute",
-        top: "0",
-        left: "0",
-        width: "100%",
-        height: "100%",
-      });
-    }
-    axisCanvas.style.pointerEvents = "none";
-    hoverCanvas.style.pointerEvents = "none";
-    glCanvas.style.cursor = "crosshair";
-
-    wrap.appendChild(axisCanvas);
-    wrap.appendChild(glCanvas);
-    wrap.appendChild(hoverCanvas);
-
-    /* ── pixel dimensions ────────────────────────────────────────────── */
-    const dpr = window.devicePixelRatio || 1;
     let W = 0,
       H = 0;
     let dirty = true;
-
-    function onResize() {
-      const r = wrap.getBoundingClientRect();
-      W = Math.round(r.width * dpr);
-      H = Math.round(r.height * dpr);
-      glCanvas.width = axisCanvas.width = hoverCanvas.width = W;
-      glCanvas.height = axisCanvas.height = hoverCanvas.height = H;
+    let hoverDirty = true;
+    const {
+      glCanvas,
+      axisCanvas,
+      hoverCanvas,
+      dpr,
+      resizeObserver: ro,
+    } = createWGLPlotCanvases(wrap, (width, height) => {
+      W = width;
+      H = height;
       dirty = true;
-    }
-    onResize();
-    const ro = new ResizeObserver(onResize);
-    ro.observe(wrap);
+      hoverDirty = true;
+    });
 
     /* ── WebGL2 setup ────────────────────────────────────────────────── */
-    const _gl = glCanvas.getContext("webgl2", {
-      antialias: true,
-      preserveDrawingBuffer: true,
-    });
+    const _gl = createWGLPlotWebGLContext(glCanvas);
     if (!_gl) {
-      wrap.insertAdjacentHTML(
-        "beforeend",
-        '<p style="color:salmon;padding:1rem;font-family:monospace">WebGL2 is required but not supported.</p>',
-      );
-      return;
+      const message = document.createElement("p");
+      message.textContent = "WebGL2 is required but not supported.";
+      Object.assign(message.style, {
+        color: "salmon",
+        padding: "1rem",
+        fontFamily: "monospace",
+      });
+      wrap.appendChild(message);
+      return () => {
+        ro.disconnect();
+        message.remove();
+        glCanvas.remove();
+        axisCanvas.remove();
+        hoverCanvas.remove();
+      };
     }
     const gl: WebGL2RenderingContext = _gl;
     const colors = getThemeColors();
 
-    const prog = gl.createProgram();
-    if (!prog) throw new Error("Failed to create WebGL program");
-    gl.attachShader(prog, compileShader(gl, gl.VERTEX_SHADER, VERT));
-    gl.attachShader(prog, compileShader(gl, gl.FRAGMENT_SHADER, FRAG));
-    gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS))
-      throw new Error(gl.getProgramInfoLog(prog) ?? "Program link failed");
-
-    const locs = {
-      a_y: gl.getAttribLocation(prog, "a_y"),
-      iOffset: gl.getUniformLocation(prog, "u_iOffset"),
-      xMin: gl.getUniformLocation(prog, "u_xMin"),
-      xMax: gl.getUniformLocation(prog, "u_xMax"),
-      yMin: gl.getUniformLocation(prog, "u_yMin"),
-      yMax: gl.getUniformLocation(prog, "u_yMax"),
-      color: gl.getUniformLocation(prog, "u_color"),
-    };
-
-    const _vao = gl.createVertexArray();
-    const _vbo = gl.createBuffer();
-    if (!_vao || !_vbo) throw new Error("Failed to create VAO/VBO");
-    const vao: WebGLVertexArrayObject = _vao;
-    const vbo: WebGLBuffer = _vbo;
-
-    gl.bindVertexArray(vao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-    let gpuCap = INIT_GPU_CAP;
-    gl.bufferData(gl.ARRAY_BUFFER, gpuCap * 4, gl.DYNAMIC_DRAW);
-    gl.enableVertexAttribArray(locs.a_y);
-    gl.vertexAttribPointer(locs.a_y, 1, gl.FLOAT, false, 0, 0);
-    gl.bindVertexArray(null);
-
-    let gpuUploaded = 0;
-
-    // FFT VAO/VBO — receives magnitude Float32Array each frame
-    const _fftVao = gl.createVertexArray();
-    const _fftVbo = gl.createBuffer();
-    if (!_fftVao || !_fftVbo) throw new Error("Failed to create FFT VAO/VBO");
-    const fftVao: WebGLVertexArrayObject = _fftVao;
-    const fftVbo: WebGLBuffer = _fftVbo;
-
-    gl.bindVertexArray(fftVao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, fftVbo);
-    gl.bufferData(gl.ARRAY_BUFFER, 4 * 4, gl.DYNAMIC_DRAW); // placeholder
-    gl.enableVertexAttribArray(locs.a_y);
-    gl.vertexAttribPointer(locs.a_y, 1, gl.FLOAT, false, 0, 0);
-    gl.bindVertexArray(null);
+    const resources = initializeWGLPlotWebGL(gl);
+    const { program: prog, locations: locs } = resources;
+    const { vao, vbo } = resources.sample;
+    const { vao: fftVao, vbo: fftVbo } = resources.fft;
+    const { vao: histVao, vbo: histVbo } = resources.histogram;
+    const { vao: decimVao, vbo: decimVbo } = resources.decimation;
+    let sampleGpuCapacity = resources.sample.capacity;
+    let fftGpuCapacity = resources.fft.capacity;
+    let histGpuCapacity = resources.histogram.capacity;
+    let decimGpuCapacity = resources.decimation.capacity;
 
     let lastFFTResult: FFTResult | null = null;
+    let lastFFTInput: {
+      ys: Float32Array;
+      count: number;
+      sampleRate: number;
+      adcMax: number;
+    } | null = null;
+    const fftWorkspace = createFFTWorkspace();
+
+    let lastHistResult: HistogramResult | null = null;
+    let histUploadedCount = -1;
+    let lastDataSource = dataRef.current;
+    let lastDataGeneration = lastDataSource.generation;
+    let lastDataCount = lastDataSource.count;
+    let lastDataBuffer = lastDataSource.ys;
+
+    /* view state (sample-index space) */
+    let view: View = viewRef.current;
+    let autoFit = wasLiveRef.current && !plotPropsRef.current.live
+      ? false
+      : autoFitRef.current;
+    wasLiveRef.current = plotPropsRef.current.live;
+
+    /* FFT view state (bin-index space). Always start at full view when (re-)entering FFT mode. */
+    let fftView: View = { xMin: 0, xMax: 0 };
+    let fftAutoFit = true;
+
+    /* Histogram view state (bin-index space). */
+    let histView: View = { xMin: 0, xMax: 0 };
+    let histAutoFit = true;
+
+    const interactionState: WGLPlotInteractionState = {
+      get view() {
+        return view;
+      },
+      set view(next: View) {
+        view = next;
+      },
+      get autoFit() {
+        return autoFit;
+      },
+      set autoFit(next: boolean) {
+        autoFit = next;
+      },
+      get fftView() {
+        return fftView;
+      },
+      set fftView(next: View) {
+        fftView = next;
+      },
+      get fftAutoFit() {
+        return fftAutoFit;
+      },
+      set fftAutoFit(next: boolean) {
+        fftAutoFit = next;
+      },
+      get histView() {
+        return histView;
+      },
+      set histView(next: View) {
+        histView = next;
+      },
+      get histAutoFit() {
+        return histAutoFit;
+      },
+      set histAutoFit(next: boolean) {
+        histAutoFit = next;
+      },
+    };
+    const interactions = createWGLPlotInteractionHandlers({
+      canvas: glCanvas,
+      dpr,
+      getCanvasWidth: () => W,
+      getPlotProps: () => plotPropsRef.current,
+      getSampleCount: () => dataRef.current.count,
+      getFFTBinCount: () => lastFFTResult?.binCount ?? null,
+      getHistogramBinCount: () => lastHistResult?.binCount ?? null,
+      state: interactionState,
+      viewRef,
+      fftViewRef,
+      histViewRef,
+      autoFitRef,
+      requestRender: () => {
+        dirty = true;
+      },
+      requestHoverRender: () => {
+        hoverDirty = true;
+      },
+    });
+
+    invalidatePlotRef.current = (resetDerivedState, currentLive) => {
+      if (resetDerivedState) {
+        autoFit =
+          wasLiveRef.current && !currentLive
+            ? false
+            : autoFitRef.current;
+        wasLiveRef.current = currentLive;
+        fftView = { xMin: 0, xMax: 0 };
+        fftAutoFit = true;
+        histView = { xMin: 0, xMax: 0 };
+        histAutoFit = true;
+        lastFFTResult = null;
+        lastFFTInput = null;
+        lastHistResult = null;
+        histUploadedCount = -1;
+        interactions.reset();
+      }
+      dirty = true;
+      hoverDirty = true;
+    };
+
+    let decimBuf: Float32Array | null = null;
+    let decimationCache: {
+      source: PlotData;
+      ys: Float32Array;
+      generation: number;
+      drawFirst: number;
+      drawCount: number;
+      numPairs: number;
+    } | null = null;
+    const minMaxPyramid = new MinMaxPyramid();
 
     const _ctx2 = axisCanvas.getContext("2d");
     const _ctxHover = hoverCanvas.getContext("2d");
@@ -192,232 +325,69 @@ export function WGLPlot({
     const ctx2: CanvasRenderingContext2D = _ctx2;
     const ctxHover: CanvasRenderingContext2D = _ctxHover;
 
-    let hoverPhys: HoverPhys = null;
-
-    /* ── view state (sample-index space) ────────────────────────────── */
-    // Restore view across effect re-runs; suppress autoFit when leaving live mode
-    let view: View = viewRef.current;
-    let autoFit = wasLiveRef.current && !live ? false : autoFitRef.current;
-    wasLiveRef.current = live;
-
-    // FFT view state (bin-index space). Always start at full view when (re-)entering FFT mode.
-    let fftView: View = { xMin: 0, xMax: 0 }; // overwritten by fftAutoFit on first frame
-    let fftAutoFit = true;
-
-    function tFromPhysX(physX: number): number {
-      const pl = PAD.l * dpr;
-      const pw = W - (PAD.l + PAD.r) * dpr;
-      return Math.max(0, Math.min(1, (physX - pl) / pw));
-    }
-
-    function clampView(v: View, count: number): View {
-      let { xMin, xMax } = v;
-      const range = xMax - xMin;
-      if (xMin < 0) {
-        xMin = 0;
-        xMax = range;
-      }
-      if (xMax > count - 1) {
-        xMax = count - 1;
-        xMin = xMax - range;
-      }
-      xMin = Math.max(0, xMin);
-      xMax = Math.min(count - 1, xMax);
-      return { xMin, xMax };
-    }
-
-    function clampFFTView(v: View, binCount: number): View {
-      let { xMin, xMax } = v;
-      const range = xMax - xMin;
-      if (xMin < 0) {
-        xMin = 0;
-        xMax = range;
-      }
-      if (xMax > binCount - 1) {
-        xMax = binCount - 1;
-        xMin = xMax - range;
-      }
-      xMin = Math.max(0, xMin);
-      xMax = Math.min(binCount - 1, xMax);
-      return { xMin, xMax };
-    }
-
-    /* ── pointer / wheel interaction ─────────────────────────────────── */
-    let drag: { startClientX: number; startView: View } | null = null;
-
-    function onWheel(e: WheelEvent) {
-      e.preventDefault();
-      if (plotModeRef.current === "fft") {
-        if (!lastFFTResult) return;
-        const binCount = lastFFTResult.binCount;
-        const r = glCanvas.getBoundingClientRect();
-        const t = tFromPhysX((e.clientX - r.left) * dpr);
-        const pivot = fftView.xMin + t * (fftView.xMax - fftView.xMin);
-        const factor = e.deltaY > 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR;
-        const newMin = pivot + (fftView.xMin - pivot) * factor;
-        const newMax = pivot + (fftView.xMax - pivot) * factor;
-        if (newMax - newMin < MIN_VISIBLE) return;
-        fftAutoFit = false;
-        fftView = clampFFTView({ xMin: newMin, xMax: newMax }, binCount);
-        fftViewRef.current = fftView;
-        dirty = true;
-        return;
-      }
-      if (live && fitAllRef.current) return;
-      const count = dataRef.current.count;
-      if (count < 2) return;
-
-      const r = glCanvas.getBoundingClientRect();
-      const t = tFromPhysX((e.clientX - r.left) * dpr);
-      const pivot = view.xMin + t * (view.xMax - view.xMin);
-
-      const factor = e.deltaY > 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR;
-      const newMin = pivot + (view.xMin - pivot) * factor;
-      const newMax = pivot + (view.xMax - pivot) * factor;
-
-      if (newMax - newMin < MIN_VISIBLE) return;
-
-      autoFit = false;
-      view = clampView({ xMin: newMin, xMax: newMax }, count);
-      autoFitRef.current = false;
-      viewRef.current = view;
-      dirty = true;
-    }
-
-    function onMouseDown(e: MouseEvent) {
-      if (e.button !== 0) return;
-      drag = {
-        startClientX: e.clientX,
-        startView: plotModeRef.current === "fft" ? { ...fftView } : { ...view },
-      };
-      hoverPhys = null;
-      glCanvas.style.cursor = "grabbing";
-    }
-
-    function onMouseMove(e: MouseEvent) {
-      if (!drag) {
-        const r = glCanvas.getBoundingClientRect();
-        hoverPhys = {
-          x: (e.clientX - r.left) * dpr,
-          y: (e.clientY - r.top) * dpr,
-        };
-      }
-      if (!drag) return;
-      if (plotModeRef.current === "fft") {
-        if (!lastFFTResult) return;
-        const binCount = lastFFTResult.binCount;
-        const pw = (W - (PAD.l + PAD.r) * dpr) / dpr;
-        const dxBins =
-          ((drag.startClientX - e.clientX) / pw) *
-          (drag.startView.xMax - drag.startView.xMin);
-        fftAutoFit = false;
-        fftView = clampFFTView(
-          {
-            xMin: drag.startView.xMin + dxBins,
-            xMax: drag.startView.xMax + dxBins,
-          },
-          binCount,
-        );
-        fftViewRef.current = fftView;
-        dirty = true;
-        return;
-      }
-      const count = dataRef.current.count;
-      if (count < 2) return;
-
-      if (live && fitAllRef.current) return;
-      const pw = (W - (PAD.l + PAD.r) * dpr) / dpr;
-      const dxSamples =
-        ((drag.startClientX - e.clientX) / pw) *
-        (drag.startView.xMax - drag.startView.xMin);
-
-      autoFit = false;
-      view = clampView(
-        {
-          xMin: drag.startView.xMin + dxSamples,
-          xMax: drag.startView.xMax + dxSamples,
-        },
-        count,
-      );
-      autoFitRef.current = false;
-      viewRef.current = view;
-      dirty = true;
-    }
-
-    function onMouseUp() {
-      drag = null;
-      glCanvas.style.cursor = "crosshair";
-    }
-    function onMouseLeave() {
-      drag = null;
-      hoverPhys = null;
-      glCanvas.style.cursor = "crosshair";
-    }
-
-    function onDblClick() {
-      if (plotModeRef.current === "fft") {
-        if (!lastFFTResult) return;
-        fftAutoFit = true;
-        fftView = { xMin: 0, xMax: lastFFTResult.binCount - 1 };
-        fftViewRef.current = fftView;
-        dirty = true;
-        return;
-      }
-      if (live && fitAllRef.current) return;
-      const count = dataRef.current.count;
-      autoFit = true;
-      if (count >= 2) view = { xMin: 0, xMax: count - 1 };
-      autoFitRef.current = true;
-      viewRef.current = view;
-      dirty = true;
-    }
-
-    glCanvas.addEventListener("wheel", onWheel, { passive: false });
-    glCanvas.addEventListener("mousedown", onMouseDown);
-    glCanvas.addEventListener("mousemove", onMouseMove);
-    glCanvas.addEventListener("mouseup", onMouseUp);
-    glCanvas.addEventListener("mouseleave", onMouseLeave);
-    glCanvas.addEventListener("dblclick", onDblClick);
+    glCanvas.addEventListener("wheel", interactions.onWheel, {
+      passive: false,
+    });
+    glCanvas.addEventListener("mousedown", interactions.onMouseDown);
+    glCanvas.addEventListener("mousemove", interactions.onMouseMove);
+    glCanvas.addEventListener("mouseup", interactions.onMouseUp);
+    glCanvas.addEventListener("mouseleave", interactions.onMouseLeave);
+    glCanvas.addEventListener("dblclick", interactions.onDblClick);
 
     /* ── RAF render loop ─────────────────────────────────────────────── */
     let rafId: number;
+    let lastOverlayActive = false;
+    let lastOverlayPulse = false;
 
     function frame() {
-      const { ys, count } = dataRef.current;
-
-      /* incremental GPU upload — only new samples are transferred */
-      if (count !== gpuUploaded) {
-        if (count > gpuUploaded) {
-          gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-          if (count > gpuCap) {
-            gpuCap = count * 2;
-            gl.bufferData(gl.ARRAY_BUFFER, gpuCap * 4, gl.DYNAMIC_DRAW);
-            gpuUploaded = 0;
-          }
-          gl.bufferSubData(
-            gl.ARRAY_BUFFER,
-            gpuUploaded * 4,
-            ys.subarray(gpuUploaded, count),
-          );
-        } else {
-          // count went backwards — data was cleared; reset FFT auto-fit
-          fftAutoFit = true;
-          lastFFTResult = null;
-        }
-        gpuUploaded = count;
+      const currentProps = plotPropsRef.current;
+      const captureRequested = (saveRequestRef?.current ?? 0) > 0;
+      if (captureRequested) {
         dirty = true;
+        hoverDirty = true;
+      }
+      const source = dataRef.current;
+      const { ys, count } = source;
+      const bufferChanged = ys !== lastDataBuffer;
+      const sourceChanged =
+        source !== lastDataSource ||
+        source.generation !== lastDataGeneration;
+      const countDecreased = count < lastDataCount;
+      const bufferReplacedWithoutAppending =
+        bufferChanged && count === lastDataCount;
+
+      if (sourceChanged || countDecreased || bufferReplacedWithoutAppending) {
+        minMaxPyramid.reset();
+        decimationCache = null;
+        fftAutoFit = true;
+        lastFFTResult = null;
+        lastFFTInput = null;
+        histAutoFit = true;
+        lastHistResult = null;
+        histUploadedCount = -1;
+        dirty = true;
+        hoverDirty = true;
+      }
+      if (count !== lastDataCount || bufferChanged) dirty = true;
+      lastDataSource = source;
+      lastDataGeneration = source.generation;
+      lastDataCount = count;
+      lastDataBuffer = ys;
+
+      if (currentProps.plotMode === "time") {
+        minMaxPyramid.update(ys, count);
       }
 
       /* keep view in sync with streaming / auto-fit */
       if (count >= 2) {
-        if (live && fitAllRef.current) {
+        if (currentProps.live && currentProps.fitAll) {
           if (view.xMin !== 0 || view.xMax !== count - 1) {
             view = { xMin: 0, xMax: count - 1 };
             viewRef.current = view;
             dirty = true;
           }
-        } else if (live) {
-          const newMin = Math.max(0, count - windowSizeRef.current);
+        } else if (currentProps.live) {
+          const newMin = Math.max(0, count - currentProps.windowSize);
           const newMax = count - 1;
           if (view.xMin !== newMin || view.xMax !== newMax) {
             view = { xMin: newMin, xMax: newMax };
@@ -435,12 +405,10 @@ export function WGLPlot({
 
       if (dirty && W > 0 && H > 0) {
         dirty = false;
+        hoverDirty = true;
 
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
-        ctx2.clearRect(0, 0, W, H);
-        ctx2.fillStyle = colors.background;
-        ctx2.fillRect(0, 0, W, H);
 
         if (count >= 2) {
           const pl = PAD.l * dpr,
@@ -448,8 +416,15 @@ export function WGLPlot({
             pt = PAD.t * dpr,
             pr = PAD.r * dpr;
           const pw = W - pl - pr;
+          const viewport = {
+            x: pl,
+            y: pb,
+            width: pw,
+            height: H - pt - pb,
+          };
 
-          switch (plotMode) {
+          gl.useProgram(prog);
+          switch (currentProps.plotMode) {
             case "time":
               {
                 const { xMin, xMax } = view;
@@ -457,19 +432,102 @@ export function WGLPlot({
                 const drawFirst = Math.max(0, Math.floor(xMin));
                 const drawLast = Math.min(count - 1, Math.ceil(xMax));
                 const drawCount = drawLast - drawFirst + 1;
-
                 if (drawCount > 0) {
-                  gl.viewport(pl, pb, pw, H - pt - PAD.b * dpr);
-                  gl.useProgram(prog);
-                  gl.uniform1i(locs.iOffset, drawFirst);
-                  gl.uniform1f(locs.xMin, xMin - drawFirst);
-                  gl.uniform1f(locs.xMax, xMax - drawFirst);
-                  gl.uniform1f(locs.yMin, 0);
-                  gl.uniform1f(locs.yMax, adcMax);
-                  gl.uniform3fv(locs.color, [57 / 255, 255 / 255, 110 / 255]);
-                  gl.bindVertexArray(vao);
-                  gl.drawArrays(gl.LINE_STRIP, drawFirst, drawCount);
-                  gl.bindVertexArray(null);
+                  if (drawCount > pw) {
+                    // More than 1 sample per device pixel — decimate to min/max pairs.
+                    const numPairs = Math.max(2, Math.floor(pw));
+                    const needed = numPairs * 2;
+                    const cached = decimationCache;
+                    if (
+                      !cached ||
+                      cached.source !== source ||
+                      cached.ys !== ys ||
+                      cached.generation !== source.generation ||
+                      cached.drawFirst !== drawFirst ||
+                      cached.drawCount !== drawCount ||
+                      cached.numPairs !== numPairs
+                    ) {
+                      if (!decimBuf || decimBuf.length < needed)
+                        decimBuf = new Float32Array(needed);
+                      buildMinMaxDecimation(
+                        ys,
+                        drawFirst,
+                        drawCount,
+                        numPairs,
+                        decimBuf,
+                        minMaxPyramid,
+                      );
+                      if (needed > decimGpuCapacity) {
+                        decimGpuCapacity = Math.max(
+                          needed,
+                          decimGpuCapacity * 2,
+                        );
+                        gl.bindBuffer(gl.ARRAY_BUFFER, decimVbo);
+                        gl.bufferData(
+                          gl.ARRAY_BUFFER,
+                          decimGpuCapacity * 4,
+                          gl.DYNAMIC_DRAW,
+                        );
+                      }
+                      gl.bindBuffer(gl.ARRAY_BUFFER, decimVbo);
+                      gl.bufferSubData(
+                        gl.ARRAY_BUFFER,
+                        0,
+                        decimBuf,
+                        0,
+                        needed,
+                      );
+                      decimationCache = {
+                        source,
+                        ys,
+                        generation: source.generation,
+                        drawFirst,
+                        drawCount,
+                        numPairs,
+                      };
+                    }
+                    drawWGLPlotSeries(gl, locs, {
+                      viewport,
+                      xMin: 0,
+                      xMax: needed - 1,
+                      yMin: 0,
+                      yMax: currentProps.adcMax,
+                      color: TIME_COLOR,
+                      vao: decimVao,
+                      vertexCount: needed,
+                    });
+                  } else {
+                    if (drawCount > sampleGpuCapacity) {
+                      sampleGpuCapacity = Math.max(
+                        drawCount,
+                        sampleGpuCapacity * 2,
+                      );
+                      gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+                      gl.bufferData(
+                        gl.ARRAY_BUFFER,
+                        sampleGpuCapacity * 4,
+                        gl.DYNAMIC_DRAW,
+                      );
+                    }
+                    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+                    gl.bufferSubData(
+                      gl.ARRAY_BUFFER,
+                      0,
+                      ys,
+                      drawFirst,
+                      drawCount,
+                    );
+                    drawWGLPlotSeries(gl, locs, {
+                      viewport,
+                      xMin: xMin - drawFirst,
+                      xMax: xMax - drawFirst,
+                      yMin: 0,
+                      yMax: currentProps.adcMax,
+                      color: TIME_COLOR,
+                      vao,
+                      vertexCount: drawCount,
+                    });
+                  }
                 }
               }
 
@@ -477,11 +535,48 @@ export function WGLPlot({
 
             case "fft": {
               const effectiveSampleRate =
-                actualSampleRateRef.current ?? sampleRate;
-              const result = computeFFT(ys, count, effectiveSampleRate, adcMax);
-              if (result) {
-                lastFFTResult = result;
-                const { magnitudes, binCount } = result;
+                currentProps.actualSampleRate ?? currentProps.sampleRate;
+              if (
+                !lastFFTInput ||
+                lastFFTInput.ys !== ys ||
+                lastFFTInput.count !== count ||
+                lastFFTInput.sampleRate !== effectiveSampleRate ||
+                lastFFTInput.adcMax !== currentProps.adcMax
+              ) {
+                lastFFTInput = {
+                  ys,
+                  count,
+                  sampleRate: effectiveSampleRate,
+                  adcMax: currentProps.adcMax,
+                };
+                lastFFTResult = computeFFT(
+                  ys,
+                  count,
+                  effectiveSampleRate,
+                  currentProps.adcMax,
+                  undefined,
+                  fftWorkspace,
+                );
+                if (lastFFTResult) {
+                  const { magnitudes } = lastFFTResult;
+                  if (magnitudes.length > fftGpuCapacity) {
+                    fftGpuCapacity = Math.max(
+                      magnitudes.length,
+                      fftGpuCapacity * 2,
+                    );
+                    gl.bindBuffer(gl.ARRAY_BUFFER, fftVbo);
+                    gl.bufferData(
+                      gl.ARRAY_BUFFER,
+                      fftGpuCapacity * 4,
+                      gl.DYNAMIC_DRAW,
+                    );
+                  }
+                  gl.bindBuffer(gl.ARRAY_BUFFER, fftVbo);
+                  gl.bufferSubData(gl.ARRAY_BUFFER, 0, magnitudes);
+                }
+              }
+              if (lastFFTResult) {
+                const { binCount } = lastFFTResult;
                 // Auto-fit: always show full spectrum until user zooms/pans
                 if (fftAutoFit) {
                   fftView = { xMin: 0, xMax: binCount - 1 };
@@ -490,20 +585,69 @@ export function WGLPlot({
                   fftView = clampFFTView(fftView, binCount);
                   fftViewRef.current = fftView;
                 }
-                gl.bindBuffer(gl.ARRAY_BUFFER, fftVbo);
-                gl.bufferData(gl.ARRAY_BUFFER, magnitudes, gl.DYNAMIC_DRAW);
 
-                gl.viewport(pl, pb, pw, H - pt - pb);
-                gl.useProgram(prog);
-                gl.uniform1i(locs.iOffset, 0);
-                gl.uniform1f(locs.xMin, fftView.xMin);
-                gl.uniform1f(locs.xMax, fftView.xMax);
-                gl.uniform1f(locs.yMin, FFT_DB_FLOOR);
-                gl.uniform1f(locs.yMax, 0);
-                gl.uniform3fv(locs.color, [255 / 255, 200 / 255, 50 / 255]);
-                gl.bindVertexArray(fftVao);
-                gl.drawArrays(gl.LINE_STRIP, 0, binCount);
-                gl.bindVertexArray(null);
+                drawWGLPlotSeries(gl, locs, {
+                  viewport,
+                  xMin: fftView.xMin,
+                  xMax: fftView.xMax,
+                  yMin: FFT_DB_FLOOR,
+                  yMax: 0,
+                  color: FFT_COLOR,
+                  vao: fftVao,
+                  vertexCount: binCount,
+                });
+              }
+              break;
+            }
+
+            case "histogram": {
+              if (count !== histUploadedCount) {
+                if (histUploadedCount === -1 || !lastHistResult) {
+                  lastHistResult = computeHistogram(
+                    ys,
+                    count,
+                    currentProps.adcMax,
+                  );
+                } else {
+                  updateHistogram(lastHistResult, ys, histUploadedCount, count);
+                }
+                if (lastHistResult) {
+                  histUploadedCount = count;
+                  if (lastHistResult.counts.length > histGpuCapacity) {
+                    histGpuCapacity = Math.max(
+                      lastHistResult.counts.length,
+                      histGpuCapacity * 2,
+                    );
+                    gl.bindBuffer(gl.ARRAY_BUFFER, histVbo);
+                    gl.bufferData(
+                      gl.ARRAY_BUFFER,
+                      histGpuCapacity * 4,
+                      gl.DYNAMIC_DRAW,
+                    );
+                  }
+                  gl.bindBuffer(gl.ARRAY_BUFFER, histVbo);
+                  gl.bufferSubData(gl.ARRAY_BUFFER, 0, lastHistResult.counts);
+                }
+              }
+              if (lastHistResult) {
+                const { binCount } = lastHistResult;
+                if (histAutoFit) {
+                  histView = { xMin: 0, xMax: binCount - 1 };
+                  histViewRef.current = histView;
+                } else if (histView.xMax >= binCount) {
+                  histView = clampHistView(histView, binCount);
+                  histViewRef.current = histView;
+                }
+                drawWGLPlotSeries(gl, locs, {
+                  viewport,
+                  xMin: histView.xMin,
+                  xMax: histView.xMax,
+                  yMin: 0,
+                  yMax: lastHistResult.yMax,
+                  color: HISTOGRAM_COLOR,
+                  vao: histVao,
+                  vertexCount: binCount,
+                });
               }
               break;
             }
@@ -513,7 +657,7 @@ export function WGLPlot({
           }
         }
 
-        if (plotMode === "time") {
+        if (currentProps.plotMode === "time") {
           drawAxes(
             ctx2,
             W,
@@ -522,17 +666,18 @@ export function WGLPlot({
             count,
             count >= 2 ? view.xMin : 0,
             count >= 2 ? view.xMax : 1,
-            adcMax,
+            currentProps.adcMax,
             colors,
-            dataRef.current.chunkUsecs,
-            dataRef.current.chunkCount,
-            y_scale,
-            voltageRef,
+            source.chunkUsecs,
+            source.chunkCount,
+            currentProps.y_scale,
+            currentProps.voltageRef,
           );
-        } else if (plotMode === "fft") {
+        } else if (currentProps.plotMode === "fft") {
           const fftAxesResult: FFTResult = lastFFTResult ?? {
             magnitudes: new Float32Array(0),
-            freqBinHz: (actualSampleRateRef.current ?? sampleRate) / 2,
+            freqBinHz:
+              (currentProps.actualSampleRate ?? currentProps.sampleRate) / 2,
             binCount: 2,
           };
           const axisXMin = lastFFTResult ? fftView.xMin : 0;
@@ -549,53 +694,119 @@ export function WGLPlot({
             axisXMax,
             colors,
           );
+        } else if (currentProps.plotMode === "histogram") {
+          const histBinCount = Math.min(currentProps.adcMax + 1, 4096);
+          const histAxesResult: HistogramResult = lastHistResult ?? {
+            counts: new Float32Array(0),
+            binCount: histBinCount,
+            binWidth: (currentProps.adcMax + 1) / histBinCount,
+            maxCount: 1,
+            yMax: 1,
+          };
+          const axisXMin = lastHistResult ? histView.xMin : 0;
+          const axisXMax = lastHistResult
+            ? histView.xMax
+            : histAxesResult.binCount - 1;
+          drawHistogramAxes(
+            ctx2,
+            W,
+            H,
+            dpr,
+            histAxesResult,
+            axisXMin,
+            axisXMax,
+            currentProps.adcMax,
+            currentProps.y_scale,
+            currentProps.voltageRef,
+            colors,
+          );
         }
       }
 
-      // crosshair is always redrawn — independent of the dirty flag
+      const now = performance.now();
+      const overlayActive =
+        currentProps.actualSampleRate !== null &&
+        currentProps.actualSampleRate !== currentProps.sampleRate;
+      const overlayPulse = overlayActive && Math.sin(now / 300) > 0;
+      if (
+        overlayActive !== lastOverlayActive ||
+        (overlayActive && overlayPulse !== lastOverlayPulse)
+      ) {
+        hoverDirty = true;
+      }
+      lastOverlayActive = overlayActive;
+      lastOverlayPulse = overlayPulse;
+
       if (W > 0 && H > 0) {
-        if (plotMode === "time") {
-          drawCrosshair(
+        if (hoverDirty) {
+          if (currentProps.plotMode === "time") {
+            drawCrosshair(
+              ctxHover,
+              W,
+              H,
+              dpr,
+              ys,
+              count,
+              view,
+              interactions.hoverPhys,
+              currentProps.sampleRate,
+              currentProps.adcMax,
+              colors,
+              source.chunkUsecs,
+              source.chunkCount,
+              currentProps.y_scale,
+              currentProps.voltageRef,
+            );
+          } else if (currentProps.plotMode === "fft" && lastFFTResult) {
+            drawFFTCrosshair(
+              ctxHover,
+              W,
+              H,
+              dpr,
+              lastFFTResult,
+              interactions.hoverPhys,
+              fftView.xMin,
+              fftView.xMax,
+              colors,
+            );
+          } else if (
+            currentProps.plotMode === "histogram" &&
+            lastHistResult
+          ) {
+            drawHistogramCrosshair(
+              ctxHover,
+              W,
+              H,
+              dpr,
+              lastHistResult,
+              interactions.hoverPhys,
+              histView.xMin,
+              histView.xMax,
+              currentProps.adcMax,
+              currentProps.y_scale,
+              currentProps.voltageRef,
+              colors,
+            );
+          } else {
+            ctxHover.clearRect(0, 0, W, H);
+          }
+          drawOverlays(
             ctxHover,
             W,
             H,
             dpr,
-            dataRef.current.ys,
-            dataRef.current.count,
-            view,
-            hoverPhys,
-            sampleRate,
-            adcMax,
+            currentProps.actualSampleRate,
+            currentProps.sampleRate,
             colors,
-            dataRef.current.chunkUsecs,
-            dataRef.current.chunkCount,
-            y_scale,
-            voltageRef,
+            now,
           );
-        } else if (plotMode === "fft" && lastFFTResult) {
-          drawFFTCrosshair(
-            ctxHover,
-            W,
-            H,
-            dpr,
-            lastFFTResult,
-            hoverPhys,
-            fftView.xMin,
-            fftView.xMax,
-            colors,
-          );
-        } else {
-          ctxHover.clearRect(0, 0, W, H);
+          hoverDirty = false;
         }
-        drawOverlays(
-          ctxHover,
-          W,
-          H,
-          dpr,
-          actualSampleRateRef.current,
-          sampleRate,
-          colors,
-        );
+      }
+
+      if (captureRequested && W > 0 && H > 0 && saveRequestRef) {
+        saveRequestRef.current--;
+        saveCanvasesAsImage(id);
       }
 
       rafId = requestAnimationFrame(frame);
@@ -607,31 +818,19 @@ export function WGLPlot({
     return () => {
       cancelAnimationFrame(rafId);
       ro.disconnect();
-      glCanvas.removeEventListener("wheel", onWheel);
-      glCanvas.removeEventListener("mousedown", onMouseDown);
-      glCanvas.removeEventListener("mousemove", onMouseMove);
-      glCanvas.removeEventListener("mouseup", onMouseUp);
-      glCanvas.removeEventListener("mouseleave", onMouseLeave);
-      glCanvas.removeEventListener("dblclick", onDblClick);
-      gl.deleteVertexArray(vao);
-      gl.deleteBuffer(vbo);
-      gl.deleteVertexArray(fftVao);
-      gl.deleteBuffer(fftVbo);
-      gl.deleteProgram(prog);
+      glCanvas.removeEventListener("wheel", interactions.onWheel);
+      glCanvas.removeEventListener("mousedown", interactions.onMouseDown);
+      glCanvas.removeEventListener("mousemove", interactions.onMouseMove);
+      glCanvas.removeEventListener("mouseup", interactions.onMouseUp);
+      glCanvas.removeEventListener("mouseleave", interactions.onMouseLeave);
+      glCanvas.removeEventListener("dblclick", interactions.onDblClick);
+      disposeWGLPlotWebGL(gl, resources);
+      invalidatePlotRef.current = null;
       glCanvas.remove();
       axisCanvas.remove();
       hoverCanvas.remove();
     };
-  }, [
-    dataRef,
-    viewRef,
-    live,
-    sampleRate,
-    adcMax,
-    y_scale,
-    voltageRef,
-    plotMode,
-  ]);
+  }, [dataRef, viewRef, id, saveRequestRef]);
 
   return (
     <div

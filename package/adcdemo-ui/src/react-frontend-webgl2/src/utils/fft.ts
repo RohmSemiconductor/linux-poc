@@ -12,6 +12,16 @@ export interface FFTResult {
   binCount: number;
 }
 
+export interface FFTWorkspace {
+  fftSize: number;
+  realIn: number[];
+  magnitudes: Float32Array;
+}
+
+export function createFFTWorkspace(): FFTWorkspace {
+  return { fftSize: 0, realIn: [], magnitudes: new Float32Array(0) };
+}
+
 // Cache the FFT instance so we don't pay table-construction cost every frame.
 let _fft: FFT | null = null;
 let _fftSize = 0;
@@ -46,6 +56,7 @@ export function computeFFT(
   sampleRate: number,
   adcMax: number,
   windowFn?: (i: number, n: number) => number,
+  workspace?: FFTWorkspace,
 ): FFTResult | null {
   if (count < 2) return null;
 
@@ -57,10 +68,16 @@ export function computeFFT(
   if (fftSize < 2) return null;
 
   const { fft, complexOut } = getFFT(fftSize);
+  const binCount = fftSize / 2 + 1;
+  if (workspace && workspace.fftSize !== fftSize) {
+    workspace.fftSize = fftSize;
+    workspace.realIn = new Array<number>(fftSize);
+    workspace.magnitudes = new Float32Array(binCount);
+  }
 
   // Build real input array from the LAST fftSize samples.
   const offset = count - fftSize;
-  const realIn = new Array<number>(fftSize);
+  const realIn = workspace?.realIn ?? new Array<number>(fftSize);
   for (let i = 0; i < fftSize; i++) {
     const w = windowFn ? windowFn(i, fftSize) : 1;
     realIn[i] = (ys[offset + i] / adcMax) * w;
@@ -69,8 +86,8 @@ export function computeFFT(
   fft.realTransform(complexOut, realIn);
   // fft.completeSpectrum(complexOut);
 
-  const binCount = fftSize / 2 + 1;
-  const magnitudes = new Float32Array(binCount);
+  const magnitudes =
+    workspace?.magnitudes ?? new Float32Array(binCount);
   for (let k = 0; k < binCount; k++) {
     const re = complexOut[2 * k];
     const im = complexOut[2 * k + 1];

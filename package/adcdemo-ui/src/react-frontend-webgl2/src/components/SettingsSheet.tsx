@@ -29,8 +29,6 @@ export function SettingsSheet({
   streaming,
   yScale,
   setYScale,
-  plotMode,
-  setPlotMode,
 }: {
   adcMax: number;
   setAdcMax: (v: number) => void;
@@ -57,6 +55,7 @@ export function SettingsSheet({
         </SheetHeader>
 
         <div className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-3">
+          <h3 className="col-span-2 text-sm font-medium">General</h3>
           <Label htmlFor="adc-select" className="text-sm">
             ADC Resolution
           </Label>
@@ -75,6 +74,23 @@ export function SettingsSheet({
               ))}
             </SelectContent>
           </Select>
+          <Label htmlFor="samplerate" className="text-sm">
+            Sample Rate (S/s)
+          </Label>
+          <NumberInput
+            id="samplerate"
+            min={1000}
+            step={1000}
+            fallback={1000}
+            value={sampleRate}
+            onChange={setSampleRate}
+            className="w-32 h-8 text-sm"
+            disabled={streaming}
+          />
+
+          <h3 className="col-span-2 mt-2 border-t pt-3 text-sm font-medium">
+            Time &amp; Histogram
+          </h3>
           <Label htmlFor="yscale-select" className="text-sm">
             Y Scale
           </Label>
@@ -105,35 +121,6 @@ export function SettingsSheet({
                   {opt.label}
                 </SelectItem>
               ))}
-            </SelectContent>
-          </Select>
-
-          <Label htmlFor="samplerate" className="text-sm">
-            Sample Rate (S/s)
-          </Label>
-          <NumberInput
-            id="samplerate"
-            min={1000}
-            step={1000}
-            fallback={1000}
-            value={sampleRate}
-            onChange={setSampleRate}
-            className="w-32 h-8 text-sm"
-            disabled={streaming}
-          />
-          <Label htmlFor="plotmode" className="text-sm">
-            Plot Mode
-          </Label>
-          <Select
-            value={plotMode}
-            onValueChange={(v) => setPlotMode(v as PlotModes)}
-          >
-            <SelectTrigger id="plotmode-select" className="w-32 h-8 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="time">Time</SelectItem>
-              <SelectItem value="fft">FFT</SelectItem>
             </SelectContent>
           </Select>
         </div>

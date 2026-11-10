@@ -71,5 +71,5 @@ function parseCsv(text: string): PlotData {
     row++;
   }
 
-  return { ys, count, chunkUsecs, chunkCount };
+  return { ys, count, generation: 0, chunkUsecs, chunkCount };
 }

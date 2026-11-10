@@ -2,6 +2,8 @@
 export interface PlotData {
   ys: Float32Array;
   count: number;
+  /** Incremented when the samples are reset without replacing this object. */
+  generation: number;
   /** One microsecond timestamp per chunk (indexed by chunk number). */
   chunkUsecs: Float64Array;
   chunkCount: number;
@@ -17,6 +19,6 @@ export interface View {
 export type HoverPhys = { x: number; y: number } | null;
 
 /** Plotter modes */
-export type PlotModes = "time" | "fft";
+export type PlotModes = "time" | "fft" | "histogram";
 
 export type YScale = "raw" | "voltage";

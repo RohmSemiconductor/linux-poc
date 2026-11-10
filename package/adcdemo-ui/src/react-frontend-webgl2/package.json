@@ -1,13 +1,17 @@
 {
   "name": "web-plotter-ts",
   "private": true,
-  "version": "1.1.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:dev-tools": "tsc -b && vite build --mode devtools --outDir dist-dev",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "version:major": "npm version major --no-git-tag-version",
+    "version:minor": "npm version minor --no-git-tag-version",
+    "version:patch": "npm version patch --no-git-tag-version"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.2.8",

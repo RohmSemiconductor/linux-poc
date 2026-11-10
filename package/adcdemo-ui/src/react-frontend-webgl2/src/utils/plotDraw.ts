@@ -2,8 +2,20 @@ import type { View, HoverPhys, YScale } from "../types";
 import type { ThemeColors } from "./themeColors";
 import { MAX_SAMPS } from "../config/constants";
 import { FFT_DB_FLOOR, type FFTResult } from "./fft";
+import type { HistogramResult } from "./histogram";
 
 export const PAD = { l: 62, b: 34, t: 10, r: 12 } as const;
+
+const FONT_CACHE = new Map<number, string>();
+
+function getPlotFont(dpr: number): string {
+  let font = FONT_CACHE.get(dpr);
+  if (!font) {
+    font = `${11 * dpr}px monospace`;
+    FONT_CACHE.set(dpr, font);
+  }
+  return font;
+}
 
 /**
  * Interpolate a sample index to a microsecond timestamp using chunk boundaries.
@@ -160,8 +172,7 @@ export function drawAxes(
   ctx.lineWidth = dpr;
   ctx.strokeRect(pl, pt, pw, ph);
 
-  const fs = 11 * dpr;
-  ctx.font = `${fs}px monospace`;
+  ctx.font = getPlotFont(dpr);
   ctx.fillStyle = colors.foreground;
   ctx.strokeStyle = "black";
   ctx.lineWidth = 3 * dpr;
@@ -291,6 +302,7 @@ export function drawOverlays(
   actualSampleRate: number | null,
   sampleRate: number,
   colors: ThemeColors,
+  now: number = performance.now(),
 ): void {
   const pl = PAD.l * dpr,
     pb = PAD.b * dpr,
@@ -300,8 +312,7 @@ export function drawOverlays(
   const ph = H - pt - pb;
 
   ctx.save();
-  const fs = 11 * dpr;
-  ctx.font = `${fs}px monospace`;
+  ctx.font = getPlotFont(dpr);
   ctx.lineJoin = "round";
 
   if (actualSampleRate !== null && actualSampleRate !== sampleRate) {
@@ -313,7 +324,7 @@ export function drawOverlays(
     const srLabel = `actual sample rate = ${actualSampleRate.toLocaleString()} Hz`;
     const rx = pl + pw - 4 * dpr;
     const ry = pt + ph - 2 * dpr;
-    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 300);
+    const pulse = 0.5 + 0.5 * Math.sin(now / 300);
     const fillColor = pulse > 0.5 ? colors.foreground : "#ff6060";
     ctx.strokeText(srLabel, rx, ry);
     ctx.fillStyle = fillColor;
@@ -392,7 +403,7 @@ export function drawCrosshair(
 
   // tooltip
   const fs = 11 * dpr;
-  ctx.font = `${fs}px monospace`;
+  ctx.font = getPlotFont(dpr);
   const baseUs = sampleToUsecs(0, chunkUsecs, chunkCount);
   const tUs = sampleToUsecs(sampleIdx, chunkUsecs, chunkCount);
   let label: string;
@@ -498,8 +509,7 @@ export function drawFFTAxes(
   ctx.lineWidth = dpr;
   ctx.strokeRect(pl, pt, pw, ph);
 
-  const fs = 11 * dpr;
-  ctx.font = `${fs}px monospace`;
+  ctx.font = getPlotFont(dpr);
   ctx.fillStyle = colors.foreground;
   ctx.strokeStyle = "black";
   ctx.lineWidth = 3 * dpr;
@@ -618,8 +628,272 @@ export function drawFFTCrosshair(
   ctx.stroke();
 
   const fs = 11 * dpr;
-  ctx.font = `${fs}px monospace`;
+  ctx.font = getPlotFont(dpr);
   const label = `f: ${formatFreq(hz)}  |  ${db.toFixed(1)} dB`;
+  const tw = ctx.measureText(label).width + 14 * dpr;
+  const th = fs + 10 * dpr;
+  let tx = hx + 14 * dpr;
+  let ty = dataY - th;
+  if (tx + tw > pl + pw) tx = hx - tw - 14 * dpr;
+  ty = Math.max(pt + 2 * dpr, Math.min(pt + ph - th - 2 * dpr, ty));
+
+  ctx.fillStyle = colors.popover90;
+  ctx.strokeStyle = colors.border;
+  ctx.lineWidth = dpr;
+  ctx.fillRect(tx, ty, tw, th);
+  ctx.strokeRect(tx, ty, tw, th);
+
+  ctx.fillStyle = colors.popoverForeground;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, tx + 7 * dpr, ty + th / 2);
+
+  ctx.restore();
+}
+
+// function formatCount(n: number): string {
+//   if (n >= 1_000_000)
+//     return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+//   if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "k";
+//   return String(Math.round(n));
+// }
+
+function formatHistVal(val: number, y_scale: YScale): string {
+  if (y_scale === "voltage") return val.toFixed(3).replace(/\.?0+$/, "") + "V";
+  return String(Math.round(val));
+}
+
+export function drawHistogramAxes(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  dpr: number,
+  result: HistogramResult,
+  xMinBin: number,
+  xMaxBin: number,
+  adcMax: number,
+  y_scale: YScale,
+  voltageRef: number,
+  colors: ThemeColors,
+): void {
+  const pl = PAD.l * dpr,
+    pb = PAD.b * dpr,
+    pt = PAD.t * dpr,
+    pr = PAD.r * dpr;
+  const pw = W - pl - pr;
+  const ph = H - pt - pb;
+
+  ctx.clearRect(0, 0, W, H);
+  if (pw <= 0 || ph <= 0 || xMaxBin <= xMinBin) return;
+  ctx.save();
+
+  const { binWidth, yMax } = result;
+  const visRange = xMaxBin - xMinBin;
+
+  const toDisplay = (bi: number) =>
+    y_scale === "voltage"
+      ? ((bi * binWidth) / adcMax) * voltageRef
+      : bi * binWidth;
+  const toBin = (val: number) =>
+    y_scale === "voltage"
+      ? ((val / voltageRef) * adcMax) / binWidth
+      : val / binWidth;
+
+  const visMinVal = toDisplay(xMinBin);
+  const visMaxVal = toDisplay(xMaxBin);
+
+  // X grid — compute steps in display-value space so grid lines and labels always align
+  const targetXSteps = Math.max(1, Math.floor(pw / (80 * dpr)));
+  const valStep = niceStep(visMaxVal - visMinVal, targetXSteps);
+  const firstVal = Math.ceil(visMinVal / valStep) * valStep;
+
+  ctx.strokeStyle = colors.foreground40;
+  ctx.lineWidth = dpr;
+  ctx.setLineDash([3 * dpr, 4 * dpr]);
+
+  for (let val = firstVal; val <= visMaxVal + valStep * 0.5; val += valStep) {
+    const bi = toBin(val);
+    const px = pl + ((bi - xMinBin) / visRange) * pw;
+    if (px < pl - 1 || px > pl + pw + 1) continue;
+    ctx.beginPath();
+    ctx.moveTo(px, pt);
+    ctx.lineTo(px, pt + ph);
+    ctx.stroke();
+  }
+
+  // Y grid
+  const yStepCount = Math.max(
+    1,
+    Math.round(niceStep(yMax, Math.max(1, Math.floor(ph / (40 * dpr))))),
+  );
+  for (let cnt = 0; cnt <= yMax; cnt += yStepCount) {
+    const py = pt + ph * (1 - cnt / yMax);
+    ctx.beginPath();
+    ctx.moveTo(pl, py);
+    ctx.lineTo(pl + pw, py);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  // Border
+  ctx.strokeStyle = colors.border;
+  ctx.lineWidth = dpr;
+  ctx.strokeRect(pl, pt, pw, ph);
+
+  ctx.font = getPlotFont(dpr);
+  ctx.fillStyle = colors.foreground;
+  ctx.strokeStyle = "black";
+  ctx.lineWidth = 3 * dpr;
+  ctx.lineJoin = "round";
+
+  // Y axis (count)
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  const fmtCount = (n: number): string => {
+    if (yStepCount >= 1_000_000)
+      return (
+        (n / 1_000_000)
+          .toFixed(yStepCount >= 10_000_000 ? 0 : 1)
+          .replace(/\.0$/, "") + "M"
+      );
+    if (yStepCount >= 1_000)
+      return (
+        (n / 1_000).toFixed(yStepCount >= 10_000 ? 0 : 1).replace(/\.0$/, "") +
+        "k"
+      );
+    return String(Math.round(n));
+  };
+  for (let cnt = 0; cnt <= yMax; cnt += yStepCount) {
+    const py = pt + ph * (1 - cnt / yMax);
+    const label = fmtCount(cnt);
+    ctx.strokeText(label, pl - 5 * dpr, py);
+    ctx.fillText(label, pl - 5 * dpr, py);
+    ctx.strokeStyle = colors.border;
+    ctx.lineWidth = dpr;
+    ctx.beginPath();
+    ctx.moveTo(pl - 3 * dpr, py);
+    ctx.lineTo(pl, py);
+    ctx.stroke();
+    ctx.strokeStyle = "black";
+    ctx.lineWidth = 3 * dpr;
+  }
+
+  // X axis (ADC value or voltage)
+  ctx.textBaseline = "top";
+
+  // Use k-abbreviation only when step is large enough that adjacent labels are distinguishable.
+  const fmtLabel = (val: number): string => {
+    if (y_scale === "voltage") {
+      const decimals = Math.max(
+        0,
+        -Math.floor(Math.log10(Math.max(valStep, 1e-9))) + 1,
+      );
+      return val.toFixed(Math.min(decimals, 6)).replace(/\.?0+$/, "") + "V";
+    }
+    const n = Math.round(val);
+    if (valStep >= 1000)
+      return (
+        (n / 1000).toFixed(valStep >= 10000 ? 0 : 1).replace(/\.0$/, "") + "k"
+      );
+    return String(n);
+  };
+
+  for (let val = firstVal; val <= visMaxVal + valStep * 0.5; val += valStep) {
+    const bi = toBin(val);
+    const px = pl + ((bi - xMinBin) / visRange) * pw;
+    if (px < pl - 1 || px > pl + pw + 1) continue;
+    const frac = (px - pl) / pw;
+    ctx.textAlign = frac < 0.05 ? "left" : frac > 0.95 ? "right" : "center";
+    const label = fmtLabel(val);
+    ctx.strokeStyle = "black";
+    ctx.lineWidth = 3 * dpr;
+    ctx.strokeText(label, px, pt + ph + 4 * dpr);
+    ctx.fillStyle = colors.foreground;
+    ctx.fillText(label, px, pt + ph + 4 * dpr);
+    ctx.strokeStyle = colors.border;
+    ctx.lineWidth = dpr;
+    ctx.beginPath();
+    ctx.moveTo(px, pt + ph);
+    ctx.lineTo(px, pt + ph + 3 * dpr);
+    ctx.stroke();
+    ctx.strokeStyle = "black";
+    ctx.lineWidth = 3 * dpr;
+  }
+
+  ctx.restore();
+}
+
+export function drawHistogramCrosshair(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  dpr: number,
+  result: HistogramResult,
+  hoverPhys: HoverPhys,
+  xMinBin: number,
+  xMaxBin: number,
+  adcMax: number,
+  y_scale: YScale,
+  voltageRef: number,
+  colors: ThemeColors,
+): void {
+  const pl = PAD.l * dpr,
+    pb = PAD.b * dpr,
+    pt = PAD.t * dpr,
+    pr = PAD.r * dpr;
+  const pw = W - pl - pr;
+  const ph = H - pt - pb;
+
+  ctx.clearRect(0, 0, W, H);
+  if (!hoverPhys || pw <= 0 || ph <= 0 || xMaxBin <= xMinBin) return;
+
+  const { x: hx, y: hy } = hoverPhys;
+  if (hx < pl || hx > pl + pw || hy < pt || hy > pt + ph) return;
+
+  const { counts, binCount, binWidth, yMax } = result;
+  const visRange = xMaxBin - xMinBin;
+
+  const toDisplay = (bi: number) =>
+    y_scale === "voltage"
+      ? ((bi * binWidth) / adcMax) * voltageRef
+      : bi * binWidth;
+
+  const t = (hx - pl) / pw;
+  const binF = xMinBin + t * visRange;
+  const bin = Math.round(Math.max(0, Math.min(binCount - 1, binF)));
+  const cnt = counts[bin] ?? 0;
+  const displayVal = toDisplay(bin);
+
+  const dataX = pl + ((bin - xMinBin) / visRange) * pw;
+  const dataY = pt + ph * (1 - cnt / yMax);
+
+  ctx.save();
+  ctx.lineWidth = dpr;
+  ctx.setLineDash([4 * dpr, 4 * dpr]);
+  ctx.strokeStyle = colors.foreground20;
+
+  ctx.beginPath();
+  ctx.moveTo(hx, pt);
+  ctx.lineTo(hx, pt + ph);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(pl, dataY);
+  ctx.lineTo(pl + pw, dataY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = colors.foreground;
+  ctx.strokeStyle = colors.foreground60;
+  ctx.lineWidth = 1.5 * dpr;
+  ctx.beginPath();
+  ctx.arc(dataX, dataY, 4 * dpr, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  const fs = 11 * dpr;
+  ctx.font = getPlotFont(dpr);
+  const label = `${formatHistVal(displayVal, y_scale)}  count: ${Math.round(cnt)}`;
   const tw = ctx.measureText(label).width + 14 * dpr;
   const th = fs + 10 * dpr;
   let tx = hx + 14 * dpr;

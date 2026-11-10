@@ -6,14 +6,13 @@ import {
   type WheelEvent,
 } from "react";
 import type { PlotModes, PlotData, YScale, View } from "./types";
-import { computeStats, type Stats } from "@/utils/stats";
+import { StatsIndex, type Stats } from "@/utils/stats";
 import { StatsBar } from "./components/StatsBar";
 import { useWebSocket, type ParsedFrame } from "./hooks/useWebSocket";
 import { WGLPlot } from "./components/WGLPlot";
 import { StatusDot } from "./components/StatusDot";
 import { PlotterControls } from "./components/PlotterControls";
-// import { generateSineData } from "./utils/sineData";
-import { saveCanvasesAsImage } from "./utils/saveImage";
+import { generateSineData } from "./utils/sineData";
 import { saveAsCsv } from "./utils/saveCsv";
 import { loadCsvFile } from "./utils/loadCsv";
 import { Button } from "@/components/ui/button";
@@ -36,24 +35,35 @@ import {
   LIVE_WINDOW_STEP_SIZE,
   APP_VERSION,
   DEFAULT_REF_VOLTAGE,
+  DEV_TOOLS_ENABLED,
 } from "@/config/constants";
 import { toast } from "sonner";
 import { SettingsSheet } from "./components/SettingsSheet";
 import { InfoCard } from "./components/InfoCard";
+import { Label } from "./components/ui/label";
+import { Checkbox } from "./components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
 
 // shadcn preset: --preset b4hIZmq00
-
 function App() {
   // All sample data lives in a plain ref — no state, no re-renders on arrival.
   // Float32Array stores Uint16 values exactly (0–65535).
   const dataRef = useRef<PlotData>({
     ys: new Float32Array(INIT_CAP),
     count: 0,
+    generation: 0,
     chunkUsecs: new Float64Array(Math.ceil(INIT_CAP / MAX_SAMPS)),
     chunkCount: 0,
   });
 
   const importInputRef = useRef<HTMLInputElement>(null);
+  const saveRequestRef = useRef(0);
 
   const [live, setLive] = useState(false);
   const [fitAll, setFitAll] = useState(false);
@@ -62,6 +72,10 @@ function App() {
   const [actualSampleRate, setActualSampleRate] = useState<number | null>(null);
   const [adcMax, setAdcMax] = useState<number>(DEFAULT_ADC_MAX);
   const [refVoltage, setRefVoltage] = useState<number>(DEFAULT_REF_VOLTAGE);
+  const [rampCheckEnabled, setRampCheckEnabled] = useState(DEV_TOOLS_ENABLED);
+  const [rampErrorCount, setRampErrorCount] = useState(0);
+  const rampErrorCountRef = useRef(0);
+  const previousRampSampleRef = useRef<number | null>(null);
   // null = continuous, otherwise duration in ms
   const [durationMs, setDurationMs] = useState<number | null>(null);
   // y-scale: "voltage" | "raw"
@@ -70,26 +84,83 @@ function App() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [totalCount, setTotalCount] = useState(0);
   const viewRef = useRef<View>({ xMin: 0, xMax: 1 });
+  const [statsIndex] = useState(() => new StatsIndex());
+  const statsSourceRef = useRef<PlotData | null>(null);
+  const statsGenerationRef = useRef(-1);
+  const statsIndexedBufferRef = useRef<Float32Array | null>(null);
+  const statsIndexedCountRef = useRef(0);
+  const statsRequestRef = useRef<{
+    source: PlotData;
+    ys: Float32Array;
+    generation: number;
+    start: number;
+    end: number;
+    displayScale: number;
+    displayPrecision: number;
+  } | null>(null);
 
   // Recompute stats every 200 ms from the visible window
   useEffect(() => {
     const id = setInterval(() => {
       const { ys, count } = dataRef.current;
       setTotalCount(count);
+      setRampErrorCount(rampErrorCountRef.current);
       if (plotMode !== "time") {
+        statsRequestRef.current = null;
         setStats(null);
         return;
       }
-      if (count < 1) {
-        setStats(null);
-        return;
+
+      const source = dataRef.current;
+      if (
+        statsSourceRef.current !== source ||
+        statsGenerationRef.current !== source.generation ||
+        (statsIndexedBufferRef.current !== ys &&
+          statsIndexedCountRef.current === count)
+      ) {
+        statsIndex.reset();
+        statsSourceRef.current = source;
+        statsGenerationRef.current = source.generation;
+        statsIndexedBufferRef.current = null;
+        statsIndexedCountRef.current = 0;
+        statsRequestRef.current = null;
       }
+
       const start = Math.max(0, Math.floor(viewRef.current.xMin));
       const end = Math.min(count, Math.ceil(viewRef.current.xMax) + 1);
-      setStats(computeStats(ys, start, end));
+      const displayScale = yScale === "voltage" ? refVoltage / adcMax : 1;
+      const displayPrecision = yScale === "voltage" ? 4 : 2;
+      const previousRequest = statsRequestRef.current;
+      if (
+        previousRequest?.source === source &&
+        previousRequest.ys === ys &&
+        previousRequest.generation === source.generation &&
+        previousRequest.start === start &&
+        previousRequest.end === end &&
+        previousRequest.displayScale === displayScale &&
+        previousRequest.displayPrecision === displayPrecision
+      ) {
+        return;
+      }
+
+      statsIndex.update(ys, count);
+      statsIndexedBufferRef.current = ys;
+      statsIndexedCountRef.current = count;
+      statsRequestRef.current = {
+        source,
+        ys,
+        generation: source.generation,
+        start,
+        end,
+        displayScale,
+        displayPrecision,
+      };
+      setStats(
+        statsIndex.compute(ys, start, end, displayScale, displayPrecision),
+      );
     }, 200);
     return () => clearInterval(id);
-  }, [plotMode]);
+  }, [plotMode, statsIndex, yScale, adcMax, refVoltage]);
 
   // const [elapsedMs, setElapsedMs] = useState<number | null>(null);
   // const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -109,47 +180,66 @@ function App() {
   //     setElapsedMs(performance.now() - streamStartRef.current);
   // }
 
-  const handleData = useCallback((frame: ParsedFrame) => {
-    const d = dataRef.current;
+  const handleData = useCallback(
+    (frame: ParsedFrame) => {
+      const d = dataRef.current;
 
-    // Detect stream restart: rpi_adc_stream resets its hardware clock on each
-    // start, so new timestamps begin at 0. Any new timestamp that is less than
-    // the last stored timestamp means a new session began — clear the buffer so
-    // the x-axis stays coherent.
-    if (d.chunkCount > 0 && frame.chunkUsecs.length > 0) {
-      const lastTs = d.chunkUsecs[d.chunkCount - 1];
-      const newTs = frame.chunkUsecs[0];
-      if (newTs < lastTs) {
-        d.count = 0;
-        d.chunkCount = 0;
+      // Detect stream restart: rpi_adc_stream resets its hardware clock on each
+      // start, so new timestamps begin at 0. Any new timestamp that is less than
+      // the last stored timestamp means a new session began — clear the buffer so
+      // the x-axis stays coherent.
+      if (d.chunkCount > 0 && frame.chunkUsecs.length > 0) {
+        const lastTs = d.chunkUsecs[d.chunkCount - 1];
+        const newTs = frame.chunkUsecs[0];
+        if (newTs < lastTs) {
+          d.count = 0;
+          d.chunkCount = 0;
+          d.generation++;
+          previousRampSampleRef.current = null;
+          rampErrorCountRef.current = 0;
+          setRampErrorCount(0);
+        }
       }
-    }
 
-    const chunk = frame.samples;
-    const needed = d.count + chunk.length;
+      const chunk = frame.samples;
+      if (rampCheckEnabled) {
+        let previous = previousRampSampleRef.current;
+        for (const sample of chunk) {
+          const isExactRollover = previous === adcMax && sample === 0;
+          if (previous !== null && sample < previous && !isExactRollover) {
+            rampErrorCountRef.current++;
+          }
+          previous = sample;
+        }
+        previousRampSampleRef.current = previous;
+      }
 
-    if (needed > d.ys.length) {
-      const newCap = Math.max(needed * 2, d.ys.length * 2);
-      const grown = new Float32Array(newCap);
-      grown.set(d.ys.subarray(0, d.count));
-      d.ys = grown;
-    }
+      const needed = d.count + chunk.length;
 
-    d.ys.set(chunk, d.count);
-    d.count += chunk.length;
-    // Append chunk timestamps
-    const newChunkCount = d.chunkCount + frame.chunkUsecs.length;
-    if (newChunkCount > d.chunkUsecs.length) {
-      const newCap = Math.max(newChunkCount * 2, d.chunkUsecs.length * 2);
-      const grown = new Float64Array(newCap);
-      grown.set(d.chunkUsecs.subarray(0, d.chunkCount));
-      d.chunkUsecs = grown;
-    }
-    for (let i = 0; i < frame.chunkUsecs.length; i++) {
-      d.chunkUsecs[d.chunkCount + i] = frame.chunkUsecs[i];
-    }
-    d.chunkCount = newChunkCount;
-  }, []);
+      if (needed > d.ys.length) {
+        const newCap = Math.max(needed * 2, d.ys.length * 2);
+        const grown = new Float32Array(newCap);
+        grown.set(d.ys.subarray(0, d.count));
+        d.ys = grown;
+      }
+
+      d.ys.set(chunk, d.count);
+      d.count += chunk.length;
+      // Append chunk timestamps
+      const newChunkCount = d.chunkCount + frame.chunkUsecs.length;
+      if (newChunkCount > d.chunkUsecs.length) {
+        const newCap = Math.max(newChunkCount * 2, d.chunkUsecs.length * 2);
+        const grown = new Float64Array(newCap);
+        grown.set(d.chunkUsecs.subarray(0, d.chunkCount));
+        d.chunkUsecs = grown;
+      }
+      for (let i = 0; i < frame.chunkUsecs.length; i++) {
+        d.chunkUsecs[d.chunkCount + i] = frame.chunkUsecs[i];
+      }
+      d.chunkCount = newChunkCount;
+    },
+    [adcMax, rampCheckEnabled],
+  );
 
   const { status, streaming, sendCommand } = useWebSocket({
     onData: handleData,
@@ -180,16 +270,35 @@ function App() {
 
   function handleClear() {
     dataRef.current.count = 0;
+    dataRef.current.generation++;
     dataRef.current.ys = new Float32Array(INIT_CAP);
     dataRef.current.chunkCount = 0;
     dataRef.current.chunkUsecs = new Float64Array(
       Math.ceil(INIT_CAP / MAX_SAMPS),
     );
+    previousRampSampleRef.current = null;
+    rampErrorCountRef.current = 0;
+    setRampErrorCount(0);
+  }
+
+  function handleGenerateSineData(sampleCount: number) {
+    dataRef.current = generateSineData(sampleCount);
+    previousRampSampleRef.current = null;
+    rampErrorCountRef.current = 0;
+    setRampErrorCount(0);
+  }
+
+  function handleRampCheckChange(enabled: boolean) {
+    previousRampSampleRef.current = null;
+    rampErrorCountRef.current = 0;
+    setRampErrorCount(0);
+    setRampCheckEnabled(enabled);
   }
 
   function handlePlotModeChange(mode: PlotModes) {
     setPlotMode(mode);
     if (mode === "fft") setLive(false);
+    if (mode === "histogram") setLive(false);
   }
 
   return (
@@ -206,25 +315,60 @@ function App() {
         >
           {status}
         </strong>
+        {DEV_TOOLS_ENABLED && (
+          <>
+            <Separator orientation="vertical" />
+            <Label
+              title="Count samples below the previous sample. Repeated values and an exact max-to-zero rollover are allowed."
+              className="gap-1.5"
+            >
+              <Checkbox
+                checked={rampCheckEnabled}
+                onCheckedChange={(checked) =>
+                  handleRampCheckChange(checked === true)
+                }
+              />
+              Linear counter check
+            </Label>
+            {rampCheckEnabled && (
+              <>
+                <Separator orientation="vertical" />
+                <span
+                  className={
+                    rampErrorCount > 0
+                      ? "text-rose-400"
+                      : "text-muted-foreground"
+                  }
+                >
+                  counter errors: {rampErrorCount.toLocaleString()}
+                </span>
+              </>
+            )}
+            <Button
+              variant="outline"
+              size="xs"
+              title="Generate 5 million sine samples"
+              disabled={streaming}
+              onClick={() => handleGenerateSineData(5_000_000)}
+            >
+              Sine 5M
+            </Button>
+            <Button
+              variant="outline"
+              size="xs"
+              title="Generate 80 million sine samples"
+              disabled={streaming}
+              onClick={() => handleGenerateSineData(80_000_000)}
+            >
+              Sine 80M
+            </Button>
+          </>
+        )}
         {/* <Separator orientation="vertical" />
         elapsed:
         <strong>
           {elapsedMs === null ? "—" : (elapsedMs / 1000).toFixed(2) + " s"}
         </strong> */}
-        {/* <Button
-          onClick={() => {
-            dataRef.current = generateSineData(5_000_000);
-          }}
-        >
-          Sine 5M
-        </Button>
-        <Button
-          onClick={() => {
-            dataRef.current = generateSineData(10_000_000);
-          }}
-        >
-          Sine 10M
-        </Button> */}
         <div className="ml-auto flex gap-2">
           <input
             ref={importInputRef}
@@ -274,7 +418,9 @@ function App() {
           </Button>
           <Button
             title="Save current view as image"
-            onClick={() => saveCanvasesAsImage("plotter")}
+            onClick={() => {
+              saveRequestRef.current++;
+            }}
           >
             <FloppyDiskIcon data-icon="inline-start"></FloppyDiskIcon>
             Save
@@ -286,6 +432,7 @@ function App() {
         onWheel={handleWheel}
         id={"plotter"}
         dataRef={dataRef}
+        saveRequestRef={saveRequestRef}
         style={{ flex: 1, minHeight: 0 }}
         sampleRate={sampleRate}
         actualSampleRate={actualSampleRate}
@@ -326,6 +473,22 @@ function App() {
         />
 
         <div className="ml-auto flex items-center gap-2">
+          <Label htmlFor="plotmode" className="text-sm">
+            Plot Mode
+          </Label>
+          <Select
+            value={plotMode}
+            onValueChange={(v) => setPlotMode(v as PlotModes)}
+          >
+            <SelectTrigger id="plotmode-select" className="w-32 h-8 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="time">Time</SelectItem>
+              <SelectItem value="fft">FFT</SelectItem>
+              <SelectItem value="histogram">Histogram</SelectItem>
+            </SelectContent>
+          </Select>
           <InfoCard plotMode={plotMode} />
           <SettingsSheet
             adcMax={adcMax}

@@ -12,5 +12,11 @@ export function generateSineData(n: number = 5_000_000): PlotData {
       amp * 0.3 * Math.sin((2 * Math.PI * i) / 137) +
       amp * 0.1 * Math.sin((2 * Math.PI * i) / 29);
   }
-  return { ys, count: n, chunkUsecs: new Float64Array(0), chunkCount: 0 };
+  return {
+    ys,
+    count: n,
+    generation: 0,
+    chunkUsecs: new Float64Array(0),
+    chunkCount: 0,
+  };
 }

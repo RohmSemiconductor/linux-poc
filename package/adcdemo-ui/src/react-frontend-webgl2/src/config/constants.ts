@@ -1,18 +1,20 @@
 declare const __APP_VERSION__: string;
 export const APP_VERSION = __APP_VERSION__;
 
-const wsHost = import.meta.env.VITE_WS_HOST ?? window.location.hostname;
+const wsHost = import.meta.env.VITE_WS_HOST || window.location.hostname;
 // const wsHost = window.location.hostname;
 export const WS_URL = `ws://${wsHost}:80/ws`;
 export const NOT_IMPLEMENTED = true;
+export const DEV_TOOLS_ENABLED =
+  (import.meta.env.DEV || import.meta.env.MODE === "devtools") &&
+  import.meta.env.VITE_ENABLE_DEV_TOOLS === "true";
 
 // mvaring chunk layout (must match struct adc_data in C code)
 export const MAX_SAMPS = 1024;
 export const CHUNK_BYTES = 4 + MAX_SAMPS * 4 + MAX_SAMPS * 4;
 
-// CPU / GPU buffer pre-allocation
+// CPU sample buffer pre-allocation
 export const INIT_CAP = 1_000_000;
-export const INIT_GPU_CAP = 1_000_000;
 
 // Plot interaction
 export const ZOOM_FACTOR = 1.15;
