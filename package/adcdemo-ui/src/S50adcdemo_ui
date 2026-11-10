@@ -5,11 +5,18 @@
 NAME=adcdemo_ui
 PID_FILE="/var/run/$NAME.pid"
 
+# SERVER=c (default) or SERVER=python (set in /etc/default/adcdemo_ui)
+SERVER=c
 [ -r /etc/default/$NAME ] && . /etc/default/$NAME
 
 start() {
     printf "Starting adcdemo_ui: "
-    start-stop-daemon -S -qbm -p $PID_FILE -x /usr/bin/python3 -- /ui/adc_server.py
+    if [ "$SERVER" = "python" ]; then
+        start-stop-daemon -S -qbm -p $PID_FILE -x /usr/bin/python3 -- /ui/adc_server.py
+    else
+        start-stop-daemon -S -qbm -p $PID_FILE -x /usr/bin/bvf_adc_server -- \
+            -p 80 -d /ui/react-frontend-webgl2/dist -s bvf_adc_stream
+    fi
     echo "OK"
 }
 stop() {

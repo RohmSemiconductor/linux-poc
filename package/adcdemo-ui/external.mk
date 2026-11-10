@@ -23,11 +23,20 @@ define ADCDEMO_UI_BUILD_CMDS
 		$(@D)/common/mvaring/src/mvaring.c \
 		$(@D)/common/shmem/src/shmem.c -lrt
 
+	$(TARGET_CC) $(TARGET_CFLAGS) -std=gnu11 -O2 \
+		-I$(@D)/c-server -I$(@D)/bvf_inc \
+		-I$(@D)/common/mvaring/inc -I$(@D)/common/shmem/inc \
+		$(TARGET_LDFLAGS) -o $(@D)/bvf_adc_server \
+		$(@D)/c-server/adc_server.c $(@D)/c-server/ws.c \
+		$(@D)/common/mvaring/src/mvaring.c \
+		$(@D)/common/shmem/src/shmem.c -lpthread -lrt
+
 	$(NPM) --prefix $(@D)/react-frontend-webgl2 install
 	$(NPM) --prefix $(@D)/react-frontend-webgl2 run build
 endef
 
 define ADCDEMO_UI_INSTALL_TARGET_CMDS
+	$(INSTALL) -m 0755 -D $(@D)/bvf_adc_server $(TARGET_DIR)/usr/bin/bvf_adc_server
 	$(INSTALL) -m 0755 -D $(@D)/adc_server.py $(TARGET_DIR)/ui/adc_server.py
 	$(INSTALL) -m 0755 -D $(@D)/mvaring.so \
 		$(TARGET_DIR)/usr/lib/python$(PYTHON3_VERSION_MAJOR)/site-packages/mvaring.so
