@@ -161,6 +161,8 @@ int main(int argc, char *argv[])
 	bool create_shm = false;
 	int ret, opt, nopts = 4;
 
+	/* The status lines are parsed by the web server reading a pipe */
+	setvbuf(stdout, NULL, _IOLBF, 0);
 	printf("%s ADC streamer v%s\n", be->name, be->version);
 
 	if (be->extra_optstring)
