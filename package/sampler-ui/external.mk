@@ -20,6 +20,7 @@ endef
 define SAMPLER_UI_INSTALL_TARGET_CMDS
 	$(INSTALL) -m 0755 -D $(@D)/server/adc_server.py $(TARGET_DIR)/ui/adc_server.py
 	$(INSTALL) -m 0755 $(@D)/server/libiio_wrapper.py $(TARGET_DIR)/ui/libiio_wrapper.py
+	$(INSTALL) -m 0755 $(@D)/server/test_iio.py $(TARGET_DIR)/ui/test_iio.py
 
 	$(INSTALL) -m 0755 $(@D)/server/libiio_wrapper_but_python_shouldnt_import_this.so \
 		$(TARGET_DIR)/usr/lib/libiio_wrapper_but_python_shouldnt_import_this.so
