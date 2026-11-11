@@ -48,7 +48,7 @@ int connect()
     /*
      * create context
      */
-    lib.context = iio_create_context(NULL, "local:");
+    lib.context = iio_create_context(&params, "local:");
     if (iio_err(lib.context))
         return iio_err(lib.context);
 
