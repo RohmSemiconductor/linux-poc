@@ -36,7 +36,7 @@ static const struct iio_context_params params = {
     .timeout_ms = -1,
 };
 
-int connect()
+int connect(const char *uri)
 {
     TRACE();
 
@@ -48,7 +48,7 @@ int connect()
     /*
      * create context
      */
-    lib.context = iio_create_context(&params, "local:");
+    lib.context = iio_create_context(&params, uri);
     if (iio_err(lib.context))
         return iio_err(lib.context);
 

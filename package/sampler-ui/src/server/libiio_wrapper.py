@@ -5,8 +5,11 @@ _iio = ctypes.cdll.LoadLibrary("/usr/lib/libiio_wrapper_but_python_shouldnt_impo
 
 _connect = _iio.connect
 _connect.restype = ctypes.c_int
-def connect() -> int:
-    return _connect()
+_connect.argtypes = (
+    ctypes.c_char_p,
+)
+def connect(uri: str = "local:") -> int:
+    return _connect(uri.encode())
 
 _disconnect = _iio.disconnect
 def disconnect():
