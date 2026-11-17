@@ -541,9 +541,8 @@ async def static_handler(request):
 def make_app() -> web.Application:
     app = web.Application()
     app.router.add_get("/ws", ws_handler)
-    if not USE_IIO:
-        app.router.add_get("/",          static_handler)
-        app.router.add_get("/{path:.+}", static_handler)
+    app.router.add_get("/",          static_handler)
+    app.router.add_get("/{path:.+}", static_handler)
     return app
 
 async def main():
@@ -566,7 +565,7 @@ async def main():
     log.info("  React app ->  http://localhost:%d/", port)
     log.info("  WebSocket ->  ws://localhost:%d/ws", port)
 
-    if not USE_IIO and not DIST_DIR.is_dir():
+    if not DIST_DIR.is_dir():
         log.warning("'%s' not found - run `npm run build` first", DIST_DIR)
 
     try:
