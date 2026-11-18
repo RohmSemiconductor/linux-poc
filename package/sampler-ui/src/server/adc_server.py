@@ -58,7 +58,7 @@ SHM_NAME = "/RPI_ADC_BUFF"
 MAX_SAMPS = mvaring.MAX_SAMPS if HAS_MVARING else 1024
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-SERVER_PORT = int(os.environ.get("ADC_SERVER_PORT", "8080"))
+SERVER_PORT = int(os.environ.get("ADC_SERVER_PORT", "80"))
 
 # Force simulation if the env variable is set
 USE_SIM = os.environ.get("ADC_USE_SIM", "").lower() in ("1", "true", "yes")

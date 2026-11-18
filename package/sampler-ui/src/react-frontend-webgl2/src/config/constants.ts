@@ -2,7 +2,7 @@ declare const __APP_VERSION__: string;
 export const APP_VERSION = __APP_VERSION__;
 
 const host = import.meta.env.VITE_WS_HOST ?? window.location.hostname;
-const port = import.meta.env.VITE_WS_PORT ?? 8080;
+const port = import.meta.env.VITE_WS_PORT ?? 80;
 
 export const WS_URL = `ws://${host}:${port}/ws`;
 export const NOT_IMPLEMENTED = true;
