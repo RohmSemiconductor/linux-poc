@@ -13,8 +13,8 @@ def main():
                    help="number of blocks to read (defaults to 8)")
     p.add_argument("-u", "--uri", type=str, default="local:",
                    help="URI to use for IIO context (defaults to 'local:')")
-    p.add_argument("-c", "--channel", type=str, required=True,
-                   help="name of the IIO channel")
+    p.add_argument("-c", "--channel", type=str, default="voltage0",
+                   help="name of the IIO channel (defaults to 'voltage0')")
     p.add_argument("-r", "--rate", type=int, default=1000, metavar="KHZ",
                    help="sampling frequency in kHz (defaults to 1000)")
     p.add_argument("-p", "--progress", action="store_true",
