@@ -4,9 +4,8 @@
 #
 ################################################################################
 
-SAMPLER_LIBIIO_VERSION = 7c2377612404b66950afacb5b145ea436104c745
-SAMPLER_LIBIIO_SITE = https://github.com/analogdevicesinc/libiio.git
-SAMPLER_LIBIIO_SITE_METHOD = git
+SAMPLER_LIBIIO_VERSION = 1.0.0
+SAMPLER_LIBIIO_SITE = $(call github,analogdevicesinc,libiio,v$(SAMPLER_LIBIIO_VERSION))
 SAMPLER_LIBIIO_LICENSE = LGPL-2.1+
 SAMPLER_LIBIIO_LICENSE_FILES = COPYING.txt
 SAMPLER_LIBIIO_DEPENDENCIES = libxml2 libaio host-flex host-bison
