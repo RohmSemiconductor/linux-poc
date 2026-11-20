@@ -4,8 +4,10 @@ import argparse
 import array
 import sys
 
-import libiio_wrapper as iio
+import iio
 
+BLOCKS_PER_STREAM = 2
+SAMPLES_PER_BLOCK = 73728
 
 def main():
     p = argparse.ArgumentParser(description="Test sampling with IIO")
@@ -25,25 +27,21 @@ def main():
     expect = None
 
     try:
-        if iio.connect(args.uri) != 0:
-            raise RuntimeError("failed to connect")
+        ctx = iio.Context(args.uri if args.uri else "local:")
 
-        devices = iio.get_devices()
-        if not "dma-sampler" in devices:
+        dev = ctx.find_device("dma-sampler")
+        if not dev:
             raise RuntimeError("no device found")
-        dev_index = devices.index("dma-sampler")
-        if iio.set_device(dev_index) != 0:
-            raise RuntimeError("failed to set device")
 
-        channels = iio.get_channels(dev_index)
-        if not args.channel in channels:
+        chan = dev.find_channel(args.channel)
+        if not chan:
             raise RuntimeError("no channel found")
-        chan_index = channels.index(args.channel)
-        if iio.set_channel(chan_index) != 0:
-            raise RuntimeError("failed to set channel")
 
-        if iio.set_sampling_frequency(args.rate * 1000) != 0:
-            raise RuntimeError("failed to set sampling frequency")
+        chan.attrs["sampling_frequency"].value = str(args.rate * 1000)
+        buffer = dev.get_buffer()
+        mask = iio.ChannelsMask(dev)
+        mask.channels = [chan]
+        stream = iio.Stream(buffer, mask, SAMPLES_PER_BLOCK, BLOCKS_PER_STREAM)
 
         for block_index in range(args.blocks):
             if args.progress:
@@ -51,8 +49,7 @@ def main():
                     print("\033[1F\033[K", end="")
                 print(f"testing block #{block_index}")
 
-            raw = array.array("H")
-            raw.frombytes(iio.get_block().tobytes())
+            raw = array.array("H", stream.__next__().read())
             values = [s & 0xfff for s in raw]
 
             for value_index, value in enumerate(values):
@@ -66,7 +63,6 @@ def main():
         return_code = 1
         print(f"\033[91merror: {e}\033[0m")
     finally:
-        iio.disconnect()
         sys.exit(return_code)
 
 if __name__ == "__main__":
