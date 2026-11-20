@@ -35,7 +35,7 @@ import struct
 import time
 from pathlib import Path
 
-import libiio_wrapper as iio
+import iio
 from aiohttp import web
 
 logging.basicConfig(
@@ -81,6 +81,9 @@ RING_READ_CHUNKS = 16
 VIRTUAL_RATE = 4000   # simulated samples/sec
 ADC_MID      = 2048   # midpoint of 12-bit range
 NOISE_AMP    = 12     # gaussian noise amplitude (12-bit scale)
+
+BLOCKS_PER_STREAM = 2
+SAMPLES_PER_BLOCK = 73728
 
 DIST_DIR = Path(__file__).resolve().parent / "react-frontend-webgl2" / "dist"
 
@@ -318,43 +321,36 @@ async def ws_handler(request):
         except asyncio.CancelledError:
             pass
 
-    async def stream_from_libiio(dev: str, chan: str, freq: int):
-        """Stream blocks from LibIIO using the C/Python wrapper"""
+    async def stream_from_libiio(dev_name: str, chan_name: str, freq: int):
+        """Stream blocks from IIO using the LibIIO Python bindings"""
 
         try:
-            if iio.connect() != 0:
+            ctx = iio.Context("local:")
+
+            dev = ctx.find_device(dev_name)
+            if not dev:
                 return
 
-            devices = iio.get_devices()
-            if not devices:
-                iio.disconnect()
-                return
-            device_index = devices.index(dev)
-            if iio.set_device(device_index) != 0:
-                iio.disconnect()
+            chan = dev.find_channel(chan_name)
+            if not chan:
                 return
 
-            channels = iio.get_channels(device_index)
-            if not channels:
-                iio.disconnect()
-                return
-            if iio.set_channel(channels.index(chan)) != 0:
-                iio.disconnect()
-                return
+            chan.attrs["sampling_frequency"].value = str(freq)
 
-            sampling_frequencies = iio.get_sampling_frequencies()
-            if not sampling_frequencies:
-                iio.disconnect()
-                return
-            if iio.set_sampling_frequency(freq) != 0:
-                iio.disconnect()
-                return
+            buffer = dev.get_buffer()
+            mask = iio.ChannelsMask(dev)
+            mask.channels = [chan]
 
-            while True:
-                await ws.send_bytes(iio.get_block())
+            stream = iio.Stream(buffer, mask,
+                                SAMPLES_PER_BLOCK, BLOCKS_PER_STREAM)
+            for block in stream:
+                await ws.send_bytes(block.read())
 
         except asyncio.CancelledError:
-            iio.disconnect()
+            pass
+        except Exception:
+            import traceback
+            traceback.print_exc()
 
     async def duration_watcher(duration_ms: float, t_start: float):
         """Stop streaming automatically after the requested duration."""
@@ -472,16 +468,21 @@ async def ws_handler(request):
                         log.info("Streaming stopped (manual, %.1f ms)", t_elapsed_ms)
 
                 case "get_devices":
+                    ctx = iio.Context("local:")
+
                     await ws.send_str(json.dumps({
                         "type": "get_devices",
-                        "devices": iio.get_devices_once(),
+                        "devices": [dev.name for dev in ctx.devices],
                     }))
 
                 case "get_channels":
                     if "device" in data:
+                        ctx = iio.Context("local:")
+                        dev = ctx.find_device(data["device"])
+
                         await ws.send_str(json.dumps({
                             "type": "get_channels",
-                            "channels": iio.get_channels_once(data["device"]),
+                            "channels": [c.id for c in dev.channels]
                         }))
                     else:
                         await ws.send_str(json.dumps({
@@ -491,10 +492,14 @@ async def ws_handler(request):
 
                 case "get_sample_rates":
                     if "device" in data and "channel" in data:
+                        ctx = iio.Context("local:")
+                        dev = ctx.find_device(data["device"])
+                        chan = dev.find_channel(data["channel"])
+                        attr = chan.attrs["sampling_frequency_available"]
+
                         await ws.send_str(json.dumps({
                             "type": "get_sample_rates",
-                            "sampleRates": iio.get_sampling_frequencies_once(data["device"],
-                                                                             data["channel"]),
+                            "sampleRates": attr.value.split(" ")
                         }))
                     else:
                         await ws .send_str(json.dumps({
