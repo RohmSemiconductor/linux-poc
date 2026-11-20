@@ -1,0 +1,4 @@
+config BR2_PACKAGE_SAMPLER_PYLIBIIO
+    bool "sampler pylibiio"
+    help
+      LibIIO v1.0 Python bindings
